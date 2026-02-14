@@ -1,0 +1,41 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.execute = exports.data = void 0;
+const discord_js_1 = __importDefault(require("discord.js"));
+const db_1 = require("../db");
+exports.data = new discord_js_1.default.SlashCommandBuilder()
+    .setName('birthday')
+    .setDescription('Set or check your birthday!')
+    .addSubcommand(sub => sub.setName('set')
+    .setDescription('Set your birthday')
+    .addIntegerOption(opt => opt.setName('month').setDescription('Month (1-12)').setRequired(true).setMinValue(1).setMaxValue(12))
+    .addIntegerOption(opt => opt.setName('day').setDescription('Day (1-31)').setRequired(true).setMinValue(1).setMaxValue(31)))
+    .addSubcommand(sub => sub.setName('check')
+    .setDescription('Check your registered birthday'));
+const execute = async (interaction) => {
+    const sub = interaction.options.getSubcommand();
+    if (sub === 'set') {
+        const month = interaction.options.getInteger('month', true);
+        const day = interaction.options.getInteger('day', true);
+        // Basic validation
+        const daysInMonth = new Date(2024, month, 0).getDate();
+        if (day > daysInMonth) {
+            return interaction.reply({ content: `ummm ${month}/${day} doesnt exist bestie 😅`, flags: discord_js_1.default.MessageFlags.Ephemeral });
+        }
+        (0, db_1.setBirthday)(interaction.user.id, interaction.guildId, month, day);
+        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        await interaction.reply(`🎂 i saved your birthday as **${monthNames[month]} ${day}**!! ill make sure to celebrate with you 💕`);
+    }
+    else if (sub === 'check') {
+        const bday = (0, db_1.getBirthday)(interaction.user.id);
+        if (!bday) {
+            return interaction.reply({ content: "you haven't set your birthday yet! use `/birthday set` 🎂", flags: discord_js_1.default.MessageFlags.Ephemeral });
+        }
+        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        await interaction.reply(`🎂 your birthday is **${monthNames[bday.month]} ${bday.day}**! dont worry, i wont forget 💕`);
+    }
+};
+exports.execute = execute;
