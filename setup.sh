@@ -103,6 +103,16 @@ else
     fail "Python 3 is required for TTS/STT but was not found. Please install Python 3.10+"
 fi
 
+# ── FIX: ensure `python` command exists (needed by npm/yt-dlp-exec) ──
+if ! command -v python &> /dev/null; then
+    warn "'python' not found — linking python → python3"
+    sudo ln -sf "$(command -v python3)" /usr/bin/python
+    success "'python' command created"
+else
+    success "python found: $(python --version)"
+fi
+
+
 
 # ── 4. FFmpeg ──
 if command -v ffmpeg &> /dev/null; then
