@@ -1,0 +1,258 @@
+/* 👾 Anime OS / True Design Candy Theme 👾 */
+:root {
+    /* 🎨 Palette: Kawaii Cyberpunk */
+    --anime-bg-dark: #09090b;
+    --anime-bg-gradient: radial-gradient(circle at 50% -20%, #2a1b3d 0%, #09090b 100%);
+
+    /* Neons */
+    --neon-pink: #ff2a6d;
+    --neon-blue: #05d9e8;
+    --neon-purple: #d300c5;
+    --neon-yellow: #fff700;
+
+    /* Glass */
+    --glass-base: rgba(20, 20, 25, 0.6);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-highlight: rgba(255, 255, 255, 0.15);
+
+    /* Text */
+    --text-primary: #ffffff;
+    --text-secondary: rgba(255, 255, 255, 0.6);
+    --text-accent: #ff2a6d;
+
+    /* Spacing & Radius */
+    --radius-lg: 32px;
+    --radius-md: 24px;
+    --radius-sm: 16px;
+
+    /* Fonts */
+    --font-display: 'Fredoka', sans-serif;
+    --font-body: 'Nunito', sans-serif;
+}
+
+body {
+    background: var(--anime-bg-dark);
+    background-image:
+        radial-gradient(circle at 15% 50%, rgba(138, 43, 226, 0.15), transparent 25%),
+        radial-gradient(circle at 85% 30%, rgba(255, 105, 180, 0.15), transparent 25%);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    overflow-x: hidden;
+    margin: 0;
+}
+
+/* 🕸️ Dot Pattern Overlay */
+.bg-pattern {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image:
+        radial-gradient(var(--glass-border) 1px, transparent 1px);
+    background-size: 24px 24px;
+    opacity: 0.3;
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* 📺 Noise Overlay */
+.bg-noise {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.03;
+    pointer-events: none;
+    z-index: 9999;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* 🍱 Bento Grid Card */
+.bento-card {
+    background: var(--glass-base);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.4),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.03);
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    overflow: hidden;
+    position: relative;
+}
+
+.bento-card:hover {
+    transform: translateY(-4px) scale(1.01);
+    box-shadow:
+        0 20px 40px rgba(0, 0, 0, 0.4),
+        0 0 0 1px var(--neon-pink);
+    border-color: var(--neon-pink);
+}
+
+/* ✨ Typography Utils */
+h1,
+h2,
+h3,
+h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+}
+
+.text-neon-pink {
+    color: var(--neon-pink);
+    text-shadow: 0 0 15px rgba(255, 42, 109, 0.5);
+}
+
+.text-neon-blue {
+    color: var(--neon-blue);
+    text-shadow: 0 0 15px rgba(5, 217, 232, 0.5);
+}
+
+/* 🎮 Scrollbar (Gaming Style) */
+::-webkit-scrollbar {
+    width: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--neon-purple);
+    border-radius: 10px;
+}
+
+/* 🌀 Animations */
+@keyframes pulse-glow {
+
+    0%,
+    100% {
+        box-shadow: 0 0 20px rgba(255, 42, 109, 0.2);
+    }
+
+    50% {
+        box-shadow: 0 0 40px rgba(255, 42, 109, 0.5);
+    }
+}
+
+/* 🖥️ Layout Override */
+.dashboard-layout {
+    position: relative;
+    min-height: 100vh;
+    padding-bottom: 180px;
+    /* Space for the dock */
+}
+
+main {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 20px;
+    padding-bottom: 200px;
+    /* Ensure content clears the dock */
+}
+
+/* ⚓ Responsive Dock */
+.dock-container {
+    position: fixed;
+    bottom: 24px;
+    left: 30%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 12px 24px;
+    gap: 12px;
+    border-radius: 32px;
+    border: 1px solid var(--glass-border);
+    background: rgba(10, 10, 15, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    max-width: 90vw;
+    width: auto;
+    white-space: nowrap;
+}
+
+.dock-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 16px;
+    text-decoration: none;
+    position: relative;
+    color: rgba(255, 255, 255, 0.6);
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    min-width: 50px;
+    height: 50px;
+}
+
+.dock-item.active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--neon-pink), var(--neon-purple));
+    box-shadow: 0 4px 15px rgba(255, 42, 109, 0.4);
+}
+
+.dock-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.dock-label {
+    font-size: 1rem;
+    font-weight: 800;
+    font-family: var(--font-display);
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* 📱 Mobile Tweaks */
+@media (max-width: 768px) {
+    .dock-container {
+        padding: 8px 16px;
+        gap: 8px;
+        bottom: 16px;
+        border-radius: 24px;
+        max-width: 95vw;
+        overflow-x: auto;
+        /* Scroll if absolutely necessary */
+    }
+
+    .dock-item {
+        padding: 10px;
+        min-width: 44px;
+        height: 44px;
+    }
+
+    .dock-icon {
+        font-size: 1.3rem;
+    }
+
+    /* Hide labels on very small screens if not active */
+    .dock-label {
+        display: none !important;
+    }
+}
+
+/* 🖥️ 8K / 4K Scaling */
+@media (min-width: 2560px) {
+    .dock-container {
+        transform: translateX(-50%) scale(1.5);
+        /* Scale up for 4k+ */
+        bottom: 40px;
+    }
+}
+
+@media (min-width: 4000px) {
+    .dock-container {
+        transform: translateX(-50%) scale(2.5);
+        /* Scale huge for 8k */
+        bottom: 80px;
+    }
+}

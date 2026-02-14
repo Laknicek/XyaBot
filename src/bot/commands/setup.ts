@@ -1,0 +1,454 @@
+import { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ButtonBuilder, ButtonStyle, ChannelType, MessageFlags, Message, TextChannel } from 'discord.js';
+import { Command } from '../types';
+import { getGuildSetting, setGuildSetting } from '../db';
+
+export const data = new SlashCommandBuilder()
+    .setName('setup')
+    .setDescription('Configure advanced bot features (Admins Only)')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    // --- SELF ROLES ---
+    .addSubcommandGroup(group =>
+        group.setName('roles')
+            .setDescription('Manage self-assignable roles')
+            .addSubcommand(sub =>
+                sub.setName('add')
+                    .setDescription('Add a role to the selection menu')
+                    .addRoleOption(opt => opt.setName('role').setDescription('The role users can clip').setRequired(true))
+                    .addStringOption(opt => opt.setName('label').setDescription('Display name (e.g. "Gamer")').setRequired(true))
+                    .addStringOption(opt => opt.setName('category').setDescription('Category group (e.g. "Age", "Games")').setRequired(false))
+                    .addStringOption(opt => opt.setName('emoji').setDescription('Emoji for the menu (e.g. 🎮)').setRequired(false))
+                    .addStringOption(opt => opt.setName('description').setDescription('Short description for the menu').setRequired(false)))
+            .addSubcommand(sub =>
+                sub.setName('remove')
+                    .setDescription('Remove a role from the configuration')
+                    .addRoleOption(opt => opt.setName('role').setDescription('The role to remove').setRequired(true)))
+            .addSubcommand(sub =>
+                sub.setName('list')
+                    .setDescription('View currently configured self roles'))
+            .addSubcommand(sub =>
+                sub.setName('post')
+                    .setDescription('Post the Self Roles menu in this channel')
+                    .addStringOption(opt => opt.setName('title').setDescription('Embed title').setRequired(false))
+                    .addStringOption(opt => opt.setName('description').setDescription('Embed description').setRequired(false)))
+            .addSubcommand(sub =>
+                sub.setName('import')
+                    .setDescription('Convert legacy role menus (YAGPDB) to buttons')
+                    .addStringOption(opt => opt.setName('type').setDescription('Source Type').setRequired(true).addChoices({ name: 'YAGPDB / Standard', value: 'legacy' }))))
+    // --- TICKETS ---
+    .addSubcommandGroup(group =>
+        group.setName('tickets')
+            .setDescription('Manage the ticket system')
+            .addSubcommand(sub =>
+                sub.setName('config')
+                    .setDescription('Configure ticket settings')
+                    .addChannelOption(opt => opt.setName('category').setDescription('Category for new tickets').addChannelTypes(ChannelType.GuildCategory).setRequired(true))
+                    .addChannelOption(opt => opt.setName('transcript_channel').setDescription('Channel to send closed ticket transcripts').addChannelTypes(ChannelType.GuildText).setRequired(false)))
+            .addSubcommand(sub =>
+                sub.setName('panel')
+                    .setDescription('Post the "Create Ticket" panel in this channel')
+                    .addStringOption(opt => opt.setName('title').setDescription('Panel Title').setRequired(false))
+                    .addStringOption(opt => opt.setName('description').setDescription('Panel Description').setRequired(false))))
+    // --- THEMES ---
+    .addSubcommandGroup(group =>
+        group.setName('theme')
+            .setDescription('Manage server channel aesthetics')
+            .addSubcommand(sub =>
+                sub.setName('preview')
+                    .setDescription('Preview a theme before applying it')
+                    .addStringOption(opt =>
+                        opt.setName('preset')
+                            .setDescription('The aesthetic theme to preview')
+                            .setRequired(true)
+                            .addChoices(
+                                { name: '💖 Valentines', value: 'valentines' },
+                                { name: '🧧 Lunar New Year', value: 'lunar_new_year' },
+                                { name: '🐰 Easter', value: 'easter' },
+                                { name: '🎄 Christmas', value: 'christmas' },
+                                { name: '🎃 Halloween', value: 'halloween' },
+                                { name: '☀️ Summer', value: 'summer' },
+                                { name: '🌸 Spring', value: 'spring' },
+                                { name: '🍂 Autumn', value: 'autumn' },
+                                { name: '🥮 Mid-Autumn Festival', value: 'mid_autumn' },
+                                { name: '✨ Default/Clean', value: 'default' }
+                            ))));
+
+export const execute: Command['execute'] = async (interaction) => {
+    const group = interaction.options.getSubcommandGroup();
+    const subcommand = interaction.options.getSubcommand();
+    const guildId = interaction.guildId!;
+
+    // --- SELF ROLES LOGIC ---
+    if (group === 'roles') {
+        const settings = getGuildSetting(guildId) || {};
+        let selfRoles: any[] = [];
+        try {
+            selfRoles = settings.self_roles ? JSON.parse(settings.self_roles) : [];
+        } catch {
+            selfRoles = [];
+        }
+
+        if (subcommand === 'add') {
+            const role = interaction.options.getRole('role')!;
+            const label = interaction.options.getString('label')!;
+            const category = interaction.options.getString('category') || 'General';
+            const emoji = interaction.options.getString('emoji') || undefined;
+            const description = interaction.options.getString('description') || undefined;
+
+            // Check duplicate
+            if (selfRoles.some((r: any) => r.roleId === role.id)) {
+                return interaction.reply({ content: `❌ **${role.name}** is already in the list!`, flags: [MessageFlags.Ephemeral] });
+            }
+
+            selfRoles.push({ roleId: role.id, label, category, emoji, description });
+            setGuildSetting(guildId, { self_roles: JSON.stringify(selfRoles) });
+
+            return interaction.reply({ content: `✅ Added **${label}** (${role.name}) to **${category}** roles!`, flags: [MessageFlags.Ephemeral] });
+        }
+
+        if (subcommand === 'remove') {
+            const role = interaction.options.getRole('role')!;
+            const initialLength = selfRoles.length;
+            selfRoles = selfRoles.filter((r: any) => r.roleId !== role.id);
+
+            if (selfRoles.length === initialLength) {
+                return interaction.reply({ content: `❌ **${role.name}** was not in the config.`, flags: [MessageFlags.Ephemeral] });
+            }
+
+            setGuildSetting(guildId, { self_roles: JSON.stringify(selfRoles) });
+            return interaction.reply({ content: `🗑️ Removed **${role.name}** from self roles.`, flags: [MessageFlags.Ephemeral] });
+        }
+
+        if (subcommand === 'list') {
+            if (selfRoles.length === 0) {
+                return interaction.reply({ content: "No self roles configured yet.", flags: [MessageFlags.Ephemeral] });
+            }
+            const description = selfRoles.map((r: any) => `• ${r.emoji || ''} **${r.label}** (<@&${r.roleId}>)`).join('\n');
+            const embed = new EmbedBuilder()
+                .setTitle('🎭 Configured Self Roles')
+                .setColor(0x00FF00)
+                .setDescription(description);
+            return interaction.reply({ embeds: [embed], flags: [MessageFlags.Ephemeral] });
+        }
+
+        if (subcommand === 'post') {
+            // Fetch Theme
+            const themeId = settings.theme_id || 'default';
+            const { THEMES } = await import('../utils/themes');
+            const theme = THEMES[themeId] || THEMES['default'];
+
+            const title = interaction.options.getString('title') || 'Choose Your Roles';
+            const description = interaction.options.getString('description') || 'Select the roles you want from the menus below!';
+
+            // Stylize Title
+            const styledTitle = `${theme.emoji} ${theme.categoryFormat?.open[0] || ''}${title}${theme.categoryFormat?.close[0] || ''}`;
+
+            // Group roles by category
+            const categories: Record<string, any[]> = {};
+            selfRoles.forEach((r: any) => {
+                const cat = r.category || 'General';
+                if (!categories[cat]) categories[cat] = [];
+                categories[cat].push(r);
+            });
+
+            // specific sort order? alphabetical for now, or 'General' first?
+            const sortedCats = Object.keys(categories).sort();
+
+            if (sortedCats.length === 0) {
+                return interaction.reply({ content: "❌ No roles configured!", flags: [MessageFlags.Ephemeral] });
+            }
+
+            if (!interaction.channel?.isSendable()) {
+                return interaction.reply({ content: "❌ I cannot send messages in this channel.", flags: [MessageFlags.Ephemeral] });
+            }
+
+            // Acknowledge first (Defer because this might take time)
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+            await interaction.editReply({ content: "⏳ Posting categorized role menus..." });
+
+            const createdMenus: any[] = [];
+
+            for (const cat of sortedCats) {
+                const roles = categories[cat];
+                const menuId = `self_role_select_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+
+                // Stylize Title for this specific Category
+                // Use the user-provided title as a prefix or just use Category? 
+                // Using Category as the main title is cleaner for "Embed per Category".
+                // If user provided a title, maybe use it as the main header and Category as sub? 
+                // Let's stick to Theme + Category as the main visual.
+                const catTitle = `${theme.emoji} ${theme.categoryFormat?.open[0] || ''} ${cat} ${theme.categoryFormat?.close[0] || ''}`;
+
+                const selectMenu = new StringSelectMenuBuilder()
+                    .setCustomId(menuId)
+                    .setPlaceholder(`Select ${cat} roles...`)
+                    .setMinValues(0)
+                    .setMaxValues(Math.min(roles.length, 25));
+
+                roles.forEach((r: any) => {
+                    selectMenu.addOptions(
+                        new StringSelectMenuOptionBuilder()
+                            .setLabel(r.label)
+                            .setValue(r.roleId)
+                            .setEmoji(r.emoji || theme.defaultEmojis[0])
+                            .setDescription(r.description || 'Click to toggle this role')
+                    );
+                });
+
+                const row = new ActionRowBuilder<StringSelectMenuBuilder>().addComponents(selectMenu);
+
+                const embed = new EmbedBuilder()
+                    .setTitle(catTitle)
+                    .setDescription(`${theme.format.open[0]} ${description} ${theme.format.close[0]}`)
+                    .setColor(theme.color)
+                    .setImage(theme.image || null)
+                    .setFooter({ text: `Server Theme: ${theme.name}` });
+
+                const msg = await interaction.channel.send({ embeds: [embed], components: [row] });
+
+                // Track this menu for auto-updates
+                const currentMenus = settings.role_menus ? JSON.parse(settings.role_menus) : [];
+                currentMenus.push({
+                    channelId: msg.channelId,
+                    messageId: msg.id,
+                    category: cat
+                });
+
+                // Update settings immediately (or accumulate and update at end)
+                // Accumulating is better for DB perms but this loop is slow anyway due to rate limits
+                // Let's just update at the end to be safe.
+                // Wait, if we update at end we need to read 'currentMenus' from accumulating variable?
+                // Actually, let's just accumulate in a local variable and save ONCE at the end.
+                // But we need to handle existing menus? Maybe we should append to existing?
+                // Yes, append.
+
+                // Small delay to ensure order?
+                await new Promise(r => setTimeout(r, 500));
+
+                // (We will save after the loop)
+                createdMenus.push({
+                    channelId: msg.channelId,
+                    messageId: msg.id,
+                    category: cat
+                });
+            }
+
+            // Save all new menus to DB
+            const existingMenus = settings.role_menus ? JSON.parse(settings.role_menus) : [];
+            const updatedMenus = [...existingMenus, ...createdMenus];
+            setGuildSetting(guildId, { role_menus: JSON.stringify(updatedMenus) });
+
+            await interaction.editReply({ content: "✅ **All menus posted!** (Auto-update enabled)" });
+        }
+
+        if (subcommand === 'import') {
+            const channel = interaction.channel;
+            if (!channel || !(channel instanceof TextChannel)) {
+                return interaction.reply({ content: "Please run this in a text channel where the role menus are!", flags: [MessageFlags.Ephemeral] });
+            }
+
+            await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+            await interaction.editReply({ content: "🔍 **Scanning channel for legacy role menus...**\nI'm looking for YAGPDB-style messages..." });
+
+            try {
+                // Fetch last 50 messages
+                const messages = await channel.messages.fetch({ limit: 50 });
+                const roleMenus: { category: string, roles: { label: string, emoji: string, roleName: string }[], message: Message }[] = [];
+
+                // Regex patterns
+                const titleRegex = /Role Menu:\s*(.+)/i;
+                const roleLineRegex = /((?:<:.+?:\d+>)|(?:[\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF]))\s*:\s*(?:`([^`]+)`|<@&(\d+)>|(.+))/g;
+
+                for (const msg of messages.values()) {
+                    if (msg.author.bot && msg.content.includes("Role Menu:")) {
+                        const titleMatch = msg.content.match(titleRegex);
+                        if (titleMatch) {
+                            const category = titleMatch[1].trim();
+                            const roles: { label: string, emoji: string, roleName: string }[] = [];
+
+                            let match;
+                            roleLineRegex.lastIndex = 0;
+
+                            while ((match = roleLineRegex.exec(msg.content)) !== null) {
+                                const emoji = match[1];
+                                let roleName = match[2] || match[4]; // Code block or plain text
+                                const roleIdRaw = match[3];
+
+                                if (roleIdRaw) {
+                                    const role = interaction.guild?.roles.cache.get(roleIdRaw);
+                                    if (role) roleName = role.name;
+                                }
+
+                                if (roleName) {
+                                    roles.push({ label: roleName.trim(), emoji, roleName: roleName.trim() });
+                                }
+                            }
+
+                            if (roles.length > 0) {
+                                roleMenus.push({ category, roles, message: msg });
+                            }
+                        }
+                    }
+                }
+
+                if (roleMenus.length === 0) {
+                    await interaction.editReply("❌ **No legacy role menus found!**\nMake sure they start with `Role Menu:` and follow the standard format.");
+                    return;
+                }
+
+                await interaction.followUp({ content: `✅ Found **${roleMenus.length}** menus! Processing...`, flags: [MessageFlags.Ephemeral] });
+
+                for (const menu of roleMenus.reverse()) {
+                    const validRoles: { label: string, emoji: string, id: string }[] = [];
+                    for (const r of menu.roles) {
+                        const role = interaction.guild?.roles.cache.find(gRole => gRole.name.toLowerCase() === r.roleName.toLowerCase());
+                        if (role) {
+                            validRoles.push({ label: r.label, emoji: r.emoji, id: role.id });
+                        } else {
+                            console.warn(`[SetupRoles] Could not find role: ${r.roleName}`);
+                        }
+                    }
+
+                    if (validRoles.length === 0) continue;
+
+                    const embed = new EmbedBuilder()
+                        .setTitle(`${menu.category}`)
+                        .setDescription("Click the buttons below to toggle your roles!")
+                        .setColor(0x2B2D31)
+                        .setFooter({ text: "Self Roles" });
+
+                    const chunks = [];
+                    for (let i = 0; i < validRoles.length; i += 5) {
+                        chunks.push(validRoles.slice(i, i + 5));
+                    }
+
+                    const rows: ActionRowBuilder<ButtonBuilder>[] = [];
+                    for (const chunk of chunks) {
+                        const row = new ActionRowBuilder<ButtonBuilder>();
+                        for (const r of chunk) {
+                            row.addComponents(
+                                new ButtonBuilder()
+                                    .setCustomId(`role_assign:${r.id}`)
+                                    .setLabel(r.label)
+                                    .setEmoji(r.emoji)
+                                    .setStyle(ButtonStyle.Secondary)
+                            );
+                        }
+                        rows.push(row);
+                    }
+
+                    try {
+                        await menu.message.delete();
+                    } catch (e) {
+                        console.warn("Could not delete old message");
+                    }
+
+                    await channel.send({ embeds: [embed], components: rows });
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+
+                await interaction.editReply("✨ **Migration Complete!** Check out the new aesthetic buttons!");
+
+            } catch (e: any) {
+                console.error(e);
+                await interaction.editReply(`❌ Error during setup: ${e.message}`);
+            }
+        }
+    }
+
+    // --- TICKETS LOGIC ---
+    if (group === 'tickets') {
+        if (subcommand === 'config') {
+            const category = interaction.options.getChannel('category')!;
+            const transcriptChannel = interaction.options.getChannel('transcript_channel');
+
+            setGuildSetting(guildId, {
+                ticket_category_id: category.id,
+                ticket_transcript_channel_id: transcriptChannel ? transcriptChannel.id : null
+            });
+
+            return interaction.reply({
+                content: `✅ **Ticket System Configured!**\n📂 Category: ${category.name}\n📜 Transcripts: ${transcriptChannel ? transcriptChannel.name : 'None'}`,
+                flags: [MessageFlags.Ephemeral]
+            });
+        }
+
+        if (subcommand === 'panel') {
+            const title = interaction.options.getString('title') || '📩 Support Tickets';
+            const desc = interaction.options.getString('description') || 'Need help? Click the button below to open a private ticket with staff!';
+
+            const embed = new EmbedBuilder()
+                .setTitle(title)
+                .setDescription(desc)
+                .setColor(0xE91E63)
+                .setFooter({ text: 'Please do not open tickets for fun! >_<' });
+
+            const button = new ButtonBuilder()
+                .setCustomId('create_ticket')
+                .setLabel('Open Ticket')
+                .setStyle(ButtonStyle.Primary)
+                .setEmoji('📩');
+
+            const row = new ActionRowBuilder<ButtonBuilder>().addComponents(button);
+
+            if (interaction.channel?.isSendable()) {
+                await interaction.channel.send({ embeds: [embed], components: [row] });
+                return interaction.reply({ content: "✅ Ticket panel posted!", flags: [MessageFlags.Ephemeral] });
+            }
+            return interaction.reply({ content: "❌ I cannot send messages in this channel.", flags: [MessageFlags.Ephemeral] });
+        }
+    }
+
+    // --- THEME SYSTEM ---
+    if (group === 'theme') {
+        const themeId = interaction.options.getString('preset')!;
+        const { THEMES, getPreview } = await import('../utils/themes');
+
+        // Verify Theme exists
+        if (!THEMES[themeId]) {
+            return interaction.reply({ content: `❌ Unknown theme: ${themeId}`, flags: [MessageFlags.Ephemeral] });
+        }
+
+        const theme = THEMES[themeId];
+        await interaction.deferReply({ flags: [MessageFlags.Ephemeral] });
+
+        // Get Channels (TextOnly, ignoring staff/private usually requires checking permissions, 
+        // but for now we just filter by ViewChannel for @everyone if possible, or just all text channels)
+        // A simple heuristic: Skip channels with "staff", "log", "admin" in name?
+        // Or better: Show them in preview and let user confirm.
+
+        // Get Channels (Text, Voice, Category)
+        const channels = interaction.guild?.channels.cache
+            .filter(c => c.type === ChannelType.GuildText || c.type === ChannelType.GuildVoice || c.type === ChannelType.GuildCategory)
+            .filter(c => !c.name.includes('staff') && !c.name.includes('log') && !c.name.includes('admin')) // Basic safety
+            .first(15); // Limit to 15 for preview to avoid hitting limits or huge embeds
+
+        if (!channels || channels.length === 0) {
+            return interaction.followUp({ content: "❌ No suitable channels found to preview." });
+        }
+
+        const previewData = getPreview(channels.map(c => ({
+            name: c.name,
+            id: c.id,
+            type: c.type,
+            rawPosition: c.rawPosition,
+            parentId: c.parentId
+        })), themeId);
+
+        const previewText = previewData.map(p => `\`${p.oldName}\` ➡️ \`${p.newName}\``).join('\n');
+
+        const embed = new EmbedBuilder()
+            .setTitle(`🎨 Theme Preview: ${theme.name}`)
+            .setDescription(`**Description:** ${theme.description}\n\n**Preview Changes:**\n${previewText}\n\n⚠️ **Warning:** Clicking Apply will rename these channels. This interacts with Discord's rate limits and may take a moment.`)
+            .setColor(0xFF69B4);
+
+        const row = new ActionRowBuilder<ButtonBuilder>()
+            .addComponents(
+                new ButtonBuilder().setCustomId(`theme_apply_${themeId}`).setLabel('Apply Theme').setStyle(ButtonStyle.Success).setEmoji('✅'),
+                new ButtonBuilder().setCustomId(`theme_regen_${themeId}`).setLabel('Regenerate (Randomize)').setStyle(ButtonStyle.Secondary).setEmoji('🎲'),
+                new ButtonBuilder().setCustomId('theme_cancel').setLabel('Cancel').setStyle(ButtonStyle.Danger).setEmoji('✖️')
+            );
+
+        await interaction.followUp({ embeds: [embed], components: [row] });
+    }
+};
+
