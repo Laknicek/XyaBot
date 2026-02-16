@@ -20,8 +20,31 @@ const deployCommands = async () => {
         console.log('Started refreshing application (/) commands.');
         const commandData = Array.from(commands_1.commands.values()).map(c => c.data.toJSON());
         if (process.env.GUILD_ID) {
-            console.log(`Deploying to specific guild: ${process.env.GUILD_ID}`);
-            await rest.put(discord_js_1.Routes.applicationGuildCommands(clientId, process.env.GUILD_ID), { body: commandData });
+            let guildIds = [];
+            try {
+                // Try parsing as JSON first (handles ["id1", "id2"])
+                const parsed = JSON.parse(process.env.GUILD_ID);
+                if (Array.isArray(parsed)) {
+                    guildIds = parsed;
+                }
+                else {
+                    guildIds = [process.env.GUILD_ID];
+                }
+            }
+            catch {
+                // If JSON parse fails, split by comma (handles id1,id2)
+                guildIds = process.env.GUILD_ID.split(',').map(id => id.trim()).filter(id => id.length > 0);
+            }
+            console.log(`Deploying to ${guildIds.length} specific guild(s)...`);
+            for (const guildId of guildIds) {
+                try {
+                    console.log(`Deploying to guild: ${guildId}`);
+                    await rest.put(discord_js_1.Routes.applicationGuildCommands(clientId, guildId), { body: commandData });
+                }
+                catch (error) {
+                    console.error(`Failed to deploy to guild ${guildId}:`, error);
+                }
+            }
         }
         else {
             console.log('Deploying globally (may take 1 hour to propagate)...');

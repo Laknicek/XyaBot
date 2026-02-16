@@ -81,7 +81,56 @@ exports.data = new discord_js_1.SlashCommandBuilder()
     .addStringOption(opt => opt.setName('preset')
     .setDescription('The aesthetic theme to preview')
     .setRequired(true)
-    .addChoices({ name: '💖 Valentines', value: 'valentines' }, { name: '🧧 Lunar New Year', value: 'lunar_new_year' }, { name: '🐰 Easter', value: 'easter' }, { name: '🎄 Christmas', value: 'christmas' }, { name: '🎃 Halloween', value: 'halloween' }, { name: '☀️ Summer', value: 'summer' }, { name: '🌸 Spring', value: 'spring' }, { name: '🍂 Autumn', value: 'autumn' }, { name: '🥮 Mid-Autumn Festival', value: 'mid_autumn' }, { name: '✨ Default/Clean', value: 'default' }))));
+    .addChoices({ name: '💖 Valentines', value: 'valentines' }, { name: '🧧 Lunar New Year', value: 'lunar_new_year' }, { name: '🐰 Easter', value: 'easter' }, { name: '🎄 Christmas', value: 'christmas' }, { name: '🎃 Halloween', value: 'halloween' }, { name: '☀️ Summer', value: 'summer' }, { name: '🌸 Spring', value: 'spring' }, { name: '🍂 Autumn', value: 'autumn' }, { name: '🥮 Mid-Autumn Festival', value: 'mid_autumn' }, { name: '✨ Default/Clean', value: 'default' })))
+    .addSubcommand(sub => sub.setName('ignore')
+    .setDescription('Manage ignored categories')
+    .addStringOption(opt => opt.setName('action')
+    .setDescription('What to do')
+    .setRequired(true)
+    .addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' }, { name: 'List', value: 'list' }))
+    .addChannelOption(opt => opt.setName('category')
+    .setDescription('The category (required for add/remove)')
+    .addChannelTypes(discord_js_1.ChannelType.GuildCategory)
+    .setRequired(false))))
+    // --- EVENTS ---
+    .addSubcommandGroup(group => group.setName('events')
+    .setDescription('Manage automated events and highlights')
+    .addSubcommand(sub => sub.setName('channel')
+    .setDescription('Set the channel for events and weekly highlights')
+    .addChannelOption(opt => opt.setName('channel')
+    .setDescription('The channel to send events/highlights to')
+    .addChannelTypes(discord_js_1.ChannelType.GuildText)
+    .setRequired(true))))
+    // --- REQUESTS ---
+    .addSubcommandGroup(group => group.setName('requests')
+    .setDescription('Manage song request settings')
+    .addSubcommand(sub => sub.setName('channel')
+    .setDescription('Set the channel for song requests')
+    .addChannelOption(opt => opt.setName('channel')
+    .setDescription('The channel to receive requests')
+    .addChannelTypes(discord_js_1.ChannelType.GuildText)
+    .setRequired(true))))
+    // --- SHOP ---
+    .addSubcommandGroup(group => group.setName('shop')
+    .setDescription('Manage shop modules')
+    .addSubcommand(sub => sub.setName('toggle')
+    .setDescription('Enable/Disable shop modules')
+    .addStringOption(opt => opt.setName('module')
+    .setDescription('The shop module to toggle')
+    .setRequired(true)
+    .addChoices({ name: '🛍️ All Shops', value: 'all' }, { name: '🍭 Xya Shop', value: 'xya' }, { name: '🎵 AI Music', value: 'music' }, { name: '🎯 Osu Mapping', value: 'osu' }))
+    .addBooleanOption(opt => opt.setName('enabled')
+    .setDescription('Enable or Disable?')
+    .setRequired(true))))
+    // --- WYR ---
+    .addSubcommandGroup(group => group.setName('wyr')
+    .setDescription('Manage Would You Rather settings')
+    .addSubcommand(sub => sub.setName('channel')
+    .setDescription('Set the channel for Daily WYR')
+    .addChannelOption(opt => opt.setName('channel')
+    .setDescription('The channel to send daily questions to')
+    .addChannelTypes(discord_js_1.ChannelType.GuildText)
+    .setRequired(true))));
 const execute = async (interaction) => {
     const group = interaction.options.getSubcommandGroup();
     const subcommand = interaction.options.getSubcommand();
@@ -290,10 +339,32 @@ const execute = async (interaction) => {
                     for (const chunk of chunks) {
                         const row = new discord_js_1.ActionRowBuilder();
                         for (const r of chunk) {
+                            let emoji = r.emoji;
+                            const customEmojiMatch = emoji.match(/<:(.*?):(\d+)>/);
+                            if (customEmojiMatch) {
+                                const [_, emojiName, emojiId] = customEmojiMatch;
+                                const clientEmoji = interaction.client.emojis.cache.get(emojiId);
+                                if (clientEmoji) {
+                                    // We have access to the exact emoji
+                                    emoji = emojiId;
+                                }
+                                else {
+                                    // Try to find a similar emoji by name in current guild or cache
+                                    const similar = interaction.guild?.emojis.cache.find(e => e.name?.toLowerCase() === emojiName.toLowerCase())
+                                        || interaction.client.emojis.cache.find(e => e.name?.toLowerCase() === emojiName.toLowerCase());
+                                    if (similar) {
+                                        emoji = similar.id;
+                                    }
+                                    else {
+                                        // Fallback to a generic emoji if not found
+                                        emoji = '✨';
+                                    }
+                                }
+                            }
                             row.addComponents(new discord_js_1.ButtonBuilder()
                                 .setCustomId(`role_assign:${r.id}`)
                                 .setLabel(r.label)
-                                .setEmoji(r.emoji)
+                                .setEmoji(emoji)
                                 .setStyle(discord_js_1.ButtonStyle.Secondary));
                         }
                         rows.push(row);
@@ -352,41 +423,174 @@ const execute = async (interaction) => {
     }
     // --- THEME SYSTEM ---
     if (group === 'theme') {
-        const themeId = interaction.options.getString('preset');
-        const { THEMES, getPreview } = await Promise.resolve().then(() => __importStar(require('../utils/themes')));
-        // Verify Theme exists
-        if (!THEMES[themeId]) {
-            return interaction.reply({ content: `❌ Unknown theme: ${themeId}`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+        const settings = (0, db_1.getGuildSetting)(guildId) || {};
+        // --- IGNORE SUBCOMMANDS ---
+        if (subcommand === 'ignore') {
+            const action = interaction.options.getString('action');
+            let ignoredCats = [];
+            try {
+                ignoredCats = settings.theme_ignored_categories ? JSON.parse(settings.theme_ignored_categories) : [];
+            }
+            catch {
+                ignoredCats = [];
+            }
+            if (action === 'list') {
+                if (ignoredCats.length === 0) {
+                    return interaction.reply({ content: "No categories are currently ignored.", flags: [discord_js_1.MessageFlags.Ephemeral] });
+                }
+                const names = ignoredCats.map(id => {
+                    const c = interaction.guild?.channels.cache.get(id);
+                    return c ? `• ${c.name}` : `• Used to be: ${id} (Deleted)`;
+                }).join('\n');
+                return interaction.reply({
+                    embeds: [new discord_js_1.EmbedBuilder().setTitle('🚫 Ignored Categories').setDescription(names).setColor(0xFF0000)],
+                    flags: [discord_js_1.MessageFlags.Ephemeral]
+                });
+            }
+            const category = interaction.options.getChannel('category');
+            if (!category) {
+                return interaction.reply({ content: "❌ You must specify a category for add/remove!", flags: [discord_js_1.MessageFlags.Ephemeral] });
+            }
+            if (action === 'add') {
+                if (ignoredCats.includes(category.id)) {
+                    return interaction.reply({ content: `❌ **${category.name}** is already ignored!`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+                }
+                ignoredCats.push(category.id);
+                (0, db_1.setGuildSetting)(guildId, { theme_ignored_categories: JSON.stringify(ignoredCats) });
+                return interaction.reply({ content: `✅ **${category.name}** and its channels will now be ignored by themes!`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+            }
+            if (action === 'remove') {
+                if (!ignoredCats.includes(category.id)) {
+                    return interaction.reply({ content: `❌ **${category.name}** was not in the ignore list.`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+                }
+                ignoredCats = ignoredCats.filter(id => id !== category.id);
+                (0, db_1.setGuildSetting)(guildId, { theme_ignored_categories: JSON.stringify(ignoredCats) });
+                return interaction.reply({ content: `✅ **${category.name}** is no longer ignored.`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+            }
+            return;
         }
-        const theme = THEMES[themeId];
-        await interaction.deferReply({ flags: [discord_js_1.MessageFlags.Ephemeral] });
-        // Get Channels (TextOnly, ignoring staff/private usually requires checking permissions, 
-        // but for now we just filter by ViewChannel for @everyone if possible, or just all text channels)
-        // A simple heuristic: Skip channels with "staff", "log", "admin" in name?
-        // Or better: Show them in preview and let user confirm.
-        // Get Channels (Text, Voice, Category)
-        const channels = interaction.guild?.channels.cache
-            .filter(c => c.type === discord_js_1.ChannelType.GuildText || c.type === discord_js_1.ChannelType.GuildVoice || c.type === discord_js_1.ChannelType.GuildCategory)
-            .filter(c => !c.name.includes('staff') && !c.name.includes('log') && !c.name.includes('admin')) // Basic safety
-            .first(15); // Limit to 15 for preview to avoid hitting limits or huge embeds
-        if (!channels || channels.length === 0) {
-            return interaction.followUp({ content: "❌ No suitable channels found to preview." });
+        if (subcommand === 'preview') {
+            const themeId = interaction.options.getString('preset');
+            const { THEMES, getPreview } = await Promise.resolve().then(() => __importStar(require('../utils/themes')));
+            // Verify Theme exists
+            if (!THEMES[themeId]) {
+                return interaction.reply({ content: `❌ Unknown theme: ${themeId}`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+            }
+            const theme = THEMES[themeId];
+            await interaction.deferReply({ flags: [discord_js_1.MessageFlags.Ephemeral] });
+            // Get Channels (Text, Voice, Category)
+            // FILTER IGNORED CATEGORIES
+            let ignoredCats = [];
+            try {
+                ignoredCats = settings.theme_ignored_categories ? JSON.parse(settings.theme_ignored_categories) : [];
+            }
+            catch { }
+            const channels = interaction.guild?.channels.cache
+                .filter(c => c.type === discord_js_1.ChannelType.GuildText || c.type === discord_js_1.ChannelType.GuildVoice || c.type === discord_js_1.ChannelType.GuildCategory)
+                .filter(c => !c.name.includes('staff') && !c.name.includes('log') && !c.name.includes('admin')) // Basic safety
+                // IGNORE LOGIC
+                .filter(c => {
+                // If it IS one of the ignored categories
+                if (ignoredCats.includes(c.id))
+                    return false;
+                // If it is a CHILD of an ignored category
+                if (c.parentId && ignoredCats.includes(c.parentId))
+                    return false;
+                return true;
+            })
+                .first(15); // Limit to 15 for preview to avoid hitting limits or huge embeds
+            if (!channels || channels.length === 0) {
+                return interaction.followUp({ content: "❌ No suitable channels found to preview." });
+            }
+            const previewData = getPreview(channels.map(c => ({
+                name: c.name,
+                id: c.id,
+                type: c.type,
+                rawPosition: c.rawPosition,
+                parentId: c.parentId
+            })), themeId);
+            const previewText = previewData.map(p => `\`${p.oldName}\` ➡️ \`${p.newName}\``).join('\n');
+            const embed = new discord_js_1.EmbedBuilder()
+                .setTitle(`🎨 Theme Preview: ${theme.name}`)
+                .setDescription(`**Description:** ${theme.description}\n\n**Preview Changes:**\n${previewText}\n\n⚠️ **Warning:** Clicking Apply will rename these channels. This interacts with Discord's rate limits and may take a moment.`)
+                .setColor(0xFF69B4);
+            const row = new discord_js_1.ActionRowBuilder()
+                .addComponents(new discord_js_1.ButtonBuilder().setCustomId(`theme_apply_${themeId}`).setLabel('Apply Theme').setStyle(discord_js_1.ButtonStyle.Success).setEmoji('✅'), new discord_js_1.ButtonBuilder().setCustomId(`theme_regen_${themeId}`).setLabel('Regenerate (Randomize)').setStyle(discord_js_1.ButtonStyle.Secondary).setEmoji('🎲'), new discord_js_1.ButtonBuilder().setCustomId('theme_cancel').setLabel('Cancel').setStyle(discord_js_1.ButtonStyle.Danger).setEmoji('✖️'));
+            await interaction.followUp({ embeds: [embed], components: [row] });
         }
-        const previewData = getPreview(channels.map(c => ({
-            name: c.name,
-            id: c.id,
-            type: c.type,
-            rawPosition: c.rawPosition,
-            parentId: c.parentId
-        })), themeId);
-        const previewText = previewData.map(p => `\`${p.oldName}\` ➡️ \`${p.newName}\``).join('\n');
-        const embed = new discord_js_1.EmbedBuilder()
-            .setTitle(`🎨 Theme Preview: ${theme.name}`)
-            .setDescription(`**Description:** ${theme.description}\n\n**Preview Changes:**\n${previewText}\n\n⚠️ **Warning:** Clicking Apply will rename these channels. This interacts with Discord's rate limits and may take a moment.`)
-            .setColor(0xFF69B4);
-        const row = new discord_js_1.ActionRowBuilder()
-            .addComponents(new discord_js_1.ButtonBuilder().setCustomId(`theme_apply_${themeId}`).setLabel('Apply Theme').setStyle(discord_js_1.ButtonStyle.Success).setEmoji('✅'), new discord_js_1.ButtonBuilder().setCustomId(`theme_regen_${themeId}`).setLabel('Regenerate (Randomize)').setStyle(discord_js_1.ButtonStyle.Secondary).setEmoji('🎲'), new discord_js_1.ButtonBuilder().setCustomId('theme_cancel').setLabel('Cancel').setStyle(discord_js_1.ButtonStyle.Danger).setEmoji('✖️'));
-        await interaction.followUp({ embeds: [embed], components: [row] });
+    }
+    // --- EVENTS LOGIC ---
+    if (group === 'events') {
+        if (subcommand === 'channel') {
+            const channel = interaction.options.getChannel('channel');
+            // Check permissions in that channel
+            if (!channel.permissionsFor(interaction.guild?.members.me).has(discord_js_1.PermissionFlagsBits.SendMessages)) {
+                return interaction.reply({ content: `❌ I don't have permission to send messages in ${channel}! Please give me permission first.`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+            }
+            (0, db_1.setGuildSetting)(guildId, { events_channel_id: channel.id });
+            return interaction.reply({
+                content: `✅ **Events Channel Configured!**\nAll automated events (Karaoke, Gem Rain, Highlights) will now be sent to ${channel}.`,
+                flags: [discord_js_1.MessageFlags.Ephemeral]
+            });
+        }
+    }
+    // --- REQUESTS LOGIC ---
+    if (group === 'requests') {
+        if (subcommand === 'channel') {
+            const channel = interaction.options.getChannel('channel');
+            (0, db_1.setGuildSetting)(guildId, { requests_channel_id: channel.id });
+            return interaction.reply({
+                content: `✅ **Request Channel Configured!**\nAll song requests will be sent to ${channel} for approval.`,
+                flags: [discord_js_1.MessageFlags.Ephemeral]
+            });
+        }
+    }
+    // --- SHOP LOGIC ---
+    if (group === 'shop') {
+        if (subcommand === 'toggle') {
+            const module = interaction.options.getString('module');
+            const enabled = interaction.options.getBoolean('enabled');
+            // Convert boolean to 1/0 for DB
+            const dbVal = enabled ? 1 : 0;
+            const settingsUpdate = {};
+            let moduleName = '';
+            if (module === 'all') {
+                settingsUpdate.shop_enabled = dbVal;
+                moduleName = 'All Shops';
+            }
+            else if (module === 'xya') {
+                settingsUpdate.shop_xya_enabled = dbVal;
+                moduleName = 'Xya Shop';
+            }
+            else if (module === 'music') {
+                settingsUpdate.shop_music_enabled = dbVal;
+                moduleName = 'AI Music Shop';
+            }
+            else if (module === 'osu') {
+                settingsUpdate.shop_osu_enabled = dbVal;
+                moduleName = 'Osu Shop';
+            }
+            (0, db_1.setGuildSetting)(guildId, settingsUpdate);
+            return interaction.reply({
+                content: `✅ **${moduleName}** is now **${enabled ? 'OPEN 🟢' : 'CLOSED 🔴'}**!`,
+                flags: [discord_js_1.MessageFlags.Ephemeral]
+            });
+        }
+    }
+    // --- WYR LOGIC ---
+    if (group === 'wyr') {
+        if (subcommand === 'channel') {
+            const channel = interaction.options.getChannel('channel');
+            // Check permissions
+            if (!channel.permissionsFor(interaction.guild?.members.me).has(discord_js_1.PermissionFlagsBits.SendMessages)) {
+                return interaction.reply({ content: `❌ I don't have permission to send messages in ${channel}!`, flags: [discord_js_1.MessageFlags.Ephemeral] });
+            }
+            (0, db_1.setGuildSetting)(guildId, { wyr_channel_id: channel.id });
+            return interaction.reply({
+                content: `✅ **WYR Channel Configured!**\nDaily "Would You Rather" questions will be sent to ${channel} at 1 AM.`,
+                flags: [discord_js_1.MessageFlags.Ephemeral]
+            });
+        }
     }
 };
 exports.execute = execute;

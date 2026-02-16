@@ -7,6 +7,7 @@ const ai_1 = require("../ai");
 const wordleGen_1 = require("../utils/wordleGen");
 const moderation_1 = require("../utils/moderation");
 const commands_1 = require("../commands");
+const EventSystem_1 = require("./EventSystem");
 const SPAM_THRESHOLD = 5;
 const SPAM_WINDOW = 5000;
 const PUNISH_RESET_TIME = 12 * 60 * 60 * 1000;
@@ -43,6 +44,32 @@ exports.name = discord_js_1.Events.MessageCreate;
 const execute = async (message) => {
     if (message.author.bot)
         return;
+    // --- EVENT SYSTEM ---
+    EventSystem_1.eventSystem.handleMessage(message);
+    // --- ATTACHMENT MODERATION ---
+    if (message.attachments.size > 0 && message.guild) {
+        const checkable = message.attachments.filter(a => a.contentType?.startsWith('image/') || a.contentType?.startsWith('video/'));
+        if (checkable.size > 0) {
+            for (const attachment of checkable.values()) {
+                const scan = await (0, ai_1.scanAttachment)(attachment.url, attachment.contentType);
+                if (!scan.safe) {
+                    try {
+                        if (message.deletable)
+                            await message.delete();
+                        const warningMsg = await message.channel.send(`⚠️ <@${message.author.id}>, your attachment was removed for **${scan.reason || 'Safety Violation'}**. Please be careful! ♪`);
+                        // Delete warning after 10s
+                        setTimeout(() => warningMsg.delete().catch(() => { }), 10000);
+                        // Log violation
+                        (0, db_1.logInteraction)(message.author.id, message.author.username, `[Deleted Attachment: ${scan.reason}]`, "Violation", "Hateful");
+                    }
+                    catch (e) {
+                        console.error("[AutoMod] Failed to action attachment:", e);
+                    }
+                    return; // STOP PROCESSING
+                }
+            }
+        }
+    }
     // Zero-Latency Debug Console
     console.log(`[Message] ${message.author.username}: ${message.content}`);
     const user = (0, db_1.getUser)(message.author.id, message.author.username);

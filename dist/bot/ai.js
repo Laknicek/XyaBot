@@ -36,13 +36,42 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.transcribeAudio = exports.checkOllamaHealth = exports.generateVoiceResponse = exports.generateResponse = void 0;
+exports.verifyImageContent = exports.scanAttachment = exports.transcribeAudio = exports.checkOllamaHealth = exports.generateVoiceResponse = exports.generateResponse = exports.generateWyrScenario = void 0;
 exports.getCurrentMood = getCurrentMood;
 const dotenv_1 = __importDefault(require("dotenv"));
 const db_1 = __importStar(require("./db"));
 dotenv_1.default.config();
 // ... (existing code: mood system, prompt builder) ...
 // ... (existing code: vision, queue, etc. - no changes) ...
+// WYR Generation
+const generateWyrScenario = async () => {
+    if (!API_KEY)
+        return { question: 'Would You Rather...', optionA: 'Be a bird', optionB: 'Be a fish' };
+    const genAI = new generative_ai_1.GoogleGenerativeAI(API_KEY);
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const prompt = `Generate a fun, creative, and balanced "Would You Rather" scenario.
+    It should be suitable for a general audience (PG-13) but interesting.
+    Return ONLY valid JSON in this format:
+    {
+        "question": "Would you rather...",
+        "optionA": "First option description",
+        "optionB": "Second option description"
+    }`;
+    try {
+        const result = await model.generateContent(prompt);
+        const text = result.response.text();
+        const jsonMatch = text.match(/\{.*\}/s);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+        throw new Error("No JSON found");
+    }
+    catch (e) {
+        console.error("[AI] WYR Generation error:", e.message);
+        return { question: 'Would you rather...', optionA: 'Always have to toggle your light switch 3 times', optionB: 'Always have to tie your shoes twice' };
+    }
+};
+exports.generateWyrScenario = generateWyrScenario;
 // --- CONTEXT-AWARE MOOD SYSTEM ---
 function getCurrentMood() {
     const hour = new Date().getHours();
@@ -408,3 +437,92 @@ const transcribeAudio = async (audioBuffer) => {
     }
 };
 exports.transcribeAudio = transcribeAudio;
+// Attachment Moderation
+const scanAttachment = async (url, mimeType) => {
+    if (!API_KEY)
+        return { safe: true };
+    const genAI = new generative_ai_1.GoogleGenerativeAI(API_KEY);
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    try {
+        const imageBase64 = await fetchImageAsBase64(url);
+        if (!imageBase64)
+            return { safe: true };
+        const prompt = `Analyze this image strictly for community safety content moderation. 
+        Detect:
+        1. Pornography / NSFW / Nudity
+        2. Gore / Extreme Violence
+        3. Hate Symbols (Swastikas, KKK, etc)
+        4. Self-Harm
+        5. Gambling (Online Casinos, Real-money betting, Slot Machines)
+        
+        If ANY of these are present, return format: { "safe": false, "reason": "SHORT_REASON" }
+        If safe, return: { "safe": true }
+        
+        Return ONLY valid JSON.`;
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    mimeType: mimeType,
+                    data: imageBase64
+                }
+            },
+            { text: prompt }
+        ]);
+        const text = result.response.text();
+        const jsonMatch = text.match(/\{.*\}/s);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+        return { safe: true };
+    }
+    catch (e) {
+        console.error("[AI] Moderation scan error:", e.message);
+        return { safe: true }; // Fail safe to avoid blocking everything on error
+    }
+};
+exports.scanAttachment = scanAttachment;
+// Helper for internal use in scanAttachment
+const fetchImageAsBase64 = async (url) => {
+    try {
+        const response = await fetch(url);
+        if (!response.ok)
+            return null;
+        const buffer = await response.arrayBuffer();
+        return Buffer.from(buffer).toString('base64');
+    }
+    catch (e) {
+        console.error('[AI] Failed to fetch image for scanning:', e);
+        return null;
+    }
+};
+// Event Verification
+const verifyImageContent = async (url, requirement) => {
+    if (!API_KEY)
+        return true; // Fail safe (pass) if no API key
+    const genAI = new generative_ai_1.GoogleGenerativeAI(API_KEY);
+    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    try {
+        const imageBase64 = await fetchImageAsBase64(url);
+        if (!imageBase64)
+            return false;
+        const prompt = `Look at this image. Does it contain or represent: "${requirement}"?
+        Answer with exactly YES or NO.`;
+        const result = await model.generateContent([
+            {
+                inlineData: {
+                    mimeType: "image/jpeg",
+                    data: imageBase64
+                }
+            },
+            { text: prompt }
+        ]);
+        const text = result.response.text().trim().toUpperCase();
+        console.log(`[AI] Verification for "${requirement}": ${text}`);
+        return text.includes('YES');
+    }
+    catch (e) {
+        console.error("[AI] Verification error:", e.message);
+        return true; // Fail safe allowing participation if AI errors
+    }
+};
+exports.verifyImageContent = verifyImageContent;

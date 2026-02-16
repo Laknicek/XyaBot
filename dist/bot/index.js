@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -11,6 +44,7 @@ const db_1 = require("./db");
 const startTts_1 = require("./utils/startTts");
 const voiceUtils_1 = require("./utils/voiceUtils");
 const ai_1 = require("./ai");
+const EventSystem_1 = require("./events/EventSystem");
 dotenv_1.default.config();
 const main = async () => {
     // 0. Clean up temp audio files
@@ -88,34 +122,11 @@ const main = async () => {
                 console.error("[Birthday] Error checking birthdays:", e);
             }
         }, 60 * 60 * 1000);
-        // --- Server Events (random, every 1-4 hours) ---
-        const scheduleNextEvent = () => {
-            const delay = (1 + Math.random() * 3) * 60 * 60 * 1000; // 1-4 hours
-            setTimeout(async () => {
-                try {
-                    const events = [
-                        { name: '🎵 Karaoke Night', desc: 'xya is feeling musical!! everyone who chats in the next 10 minutes gets **2x XP**! 🎤✨', multiplier: 2 },
-                        { name: '💰 Gem Rain', desc: 'omg its raining gems!! everyone who sends a message gets **bonus 50 coins**! 💎🌧️', coins: 50 },
-                        { name: '🎲 Lucky Hour', desc: 'feeling lucky?? chat messages give **3x XP** for the next 15 minutes! 🍀', multiplier: 3 },
-                        { name: '💕 Friendship Festival', desc: 'xya is feeling extra loving!! all friendship gains are **doubled** this hour 💕🥰', friendship: true },
-                        { name: '🌟 Star Shower', desc: 'a shower of stars!! first 5 people to chat get **100 bonus coins** ⭐✨', coins: 100 },
-                    ];
-                    const event = events[Math.floor(Math.random() * events.length)];
-                    for (const guild of client.guilds.cache.values()) {
-                        const channel = guild.channels.cache.find((c) => c.isTextBased() && c.permissionsFor?.(guild.members.me)?.has('SendMessages'));
-                        if (channel?.isSendable()) {
-                            await channel.send(`🎉 **${event.name}!**\n${event.desc}`);
-                        }
-                    }
-                    console.log(`[Event] 🎉 Triggered: ${event.name}`);
-                }
-                catch (e) {
-                    console.error("[Event] Error:", e);
-                }
-                scheduleNextEvent();
-            }, delay);
-        };
-        scheduleNextEvent();
+        // --- Server Events (Managed by EventSystem) ---
+        EventSystem_1.eventSystem.init(client);
+        // --- Scheduler (Daily WYR, etc) ---
+        const { initScheduler } = await Promise.resolve().then(() => __importStar(require('./utils/scheduler')));
+        initScheduler(client);
         // --- Weekly Highlights (every Sunday at noon) ---
         setInterval(async () => {
             const now = new Date();
@@ -145,7 +156,15 @@ const main = async () => {
                         }
                     }
                     highlightText += `\nyou guys are amazing, keep it up!! 💕✨ — Xya`;
-                    const channel = guild.channels.cache.find((c) => c.isTextBased() && c.permissionsFor?.(guild.members.me)?.has('SendMessages'));
+                    highlightText += `\nyou guys are amazing, keep it up!! 💕✨ — Xya`;
+                    const settings = (0, db_1.getGuildSetting)(guild.id);
+                    let channel;
+                    if (settings?.events_channel_id) {
+                        channel = guild.channels.cache.get(settings.events_channel_id);
+                    }
+                    if (!channel) {
+                        channel = guild.channels.cache.find((c) => c.isTextBased() && c.permissionsFor?.(guild.members.me)?.has('SendMessages'));
+                    }
                     if (channel?.isSendable()) {
                         await channel.send(highlightText);
                     }

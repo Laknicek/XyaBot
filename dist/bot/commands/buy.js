@@ -11,7 +11,12 @@ exports.data = new discord_js_1.SlashCommandBuilder()
     .setDescription('The item to buy')
     .setRequired(true)
     .addChoices(...shop_1.SHOP_ITEMS.map(i => ({ name: i.name, value: i.id }))));
+const db_2 = require("../db");
 const execute = async (interaction) => {
+    const settings = (0, db_2.getGuildSetting)(interaction.guildId) || {};
+    if (settings.shop_enabled === 0 || settings.shop_xya_enabled === 0) {
+        return interaction.reply({ content: '🚫 The **Xya Shop** is currently closed.', flags: [discord_js_1.MessageFlags.Ephemeral] });
+    }
     const itemId = interaction.options.getString('item');
     const item = shop_1.SHOP_ITEMS.find(i => i.id === itemId);
     const user = (0, db_1.getUser)(interaction.user.id, interaction.user.username);

@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.execute = exports.data = exports.SHOP_ITEMS = void 0;
 const discord_js_1 = require("discord.js");
+const db_1 = require("../db");
 exports.SHOP_ITEMS = [
     { id: 'lollipop', name: '🍭 Sweet Lollipop', price: 50, description: 'A small treat for Xya — she loves sweets!' },
     { id: 'cupcake', name: '🧁 Strawberry Cupcake', price: 200, description: 'A lovely cupcake she absolutely adores!' },
@@ -29,16 +30,18 @@ function buildXyaShopEmbed() {
 function buildMusicShopEmbed() {
     return new discord_js_1.EmbedBuilder()
         .setColor(0x8A2BE2)
-        .setTitle('🎵 AI Music Shop')
-        .setDescription('✨ **Coming Soon!** ✨\n\nGenerate custom AI music, remixes, and beats right from Discord!\n\n🎧 AI-powered song generation\n🎹 Custom beats & instrumentals\n🎤 Voice synthesis tracks\n🔥 Community remix battles')
-        .setFooter({ text: '🚧 Under development — stay tuned!' });
+        .setTitle('🎵 AI Music Studio')
+        .setDescription('✨ **Now Available!** ✨\n\nGenerate custom AI music, lyrics, and beats right from Discord using **Suno AI V5**!')
+        .addFields({ name: '💰 Price', value: '💎 10,000 Gems per request', inline: true }, { name: '📦 Includes', value: '2 Full Songs + Covers', inline: true }, { name: '🚀 How to Use', value: 'Use the `/music` command to start generating!', inline: false })
+        .setFooter({ text: 'Powered by Suno AI V5 • High Quality Audio' });
 }
 function buildOsuShopEmbed() {
     return new discord_js_1.EmbedBuilder()
         .setColor(0xFF4500)
         .setTitle('🎯 Osu Mapping AI')
-        .setDescription('✨ **Coming Soon!** ✨\n\nAI-powered osu! beatmap generation and mapping tools!\n\n🗺️ Auto-generate beatmaps from any song\n⭐ Difficulty scaling (Easy → Expert+)\n🎨 Hitsound suggestions\n📊 Map analysis & improvement tips')
-        .setFooter({ text: '🚧 Under development — stay tuned!' });
+        .setDescription('✨ **Now Available!** ✨\n\nAI-powered osu! beatmap generation!\n\n🗺️ **Auto-Map**: Generate a full beatmap from any audio file.\n⭐ **Custom Difficulty**: Choose your star rating.\n🤖 **AI Models**: Includes standard and LoRA fine-tuned models.')
+        .addFields({ name: '💰 Price', value: '💎 1,000 Gems per map', inline: true }, { name: '📦 Includes', value: '.osz file via DM', inline: true }, { name: '🚀 How to Use', value: 'Use `/osu-map` and upload your song!', inline: false })
+        .setFooter({ text: 'Powered by Mapperatorinator v30' });
 }
 // Build category buttons
 function buildCategoryButtons(activeCategory) {
@@ -64,10 +67,42 @@ exports.data = new discord_js_1.SlashCommandBuilder()
     .setName('shop')
     .setDescription('Visit Xya\'s Shop! 💎 Browse categories and find awesome stuff!');
 const execute = async (interaction) => {
-    let activeCategory = 'xya';
+    const settings = (0, db_1.getGuildSetting)(interaction.guildId) || {};
+    // Global Shop Check
+    if (settings.shop_enabled === 0) {
+        return interaction.reply({ content: '🚫 The **Shop** is currently closed by the admins.', flags: [discord_js_1.MessageFlags.Ephemeral] });
+    }
+    // Determine initial category
+    let activeCategory = '';
+    if (settings.shop_xya_enabled !== 0)
+        activeCategory = 'xya';
+    else if (settings.shop_music_enabled !== 0)
+        activeCategory = 'music';
+    else if (settings.shop_osu_enabled !== 0)
+        activeCategory = 'osu';
+    if (!activeCategory) {
+        return interaction.reply({ content: '🚫 All specific shops are currently closed.', flags: [discord_js_1.MessageFlags.Ephemeral] });
+    }
+    const getButtons = (activeCallback) => {
+        const row = new discord_js_1.ActionRowBuilder();
+        row.addComponents(new discord_js_1.ButtonBuilder()
+            .setCustomId('shop_xya')
+            .setLabel('🍭 Xya Shop')
+            .setStyle(activeCallback === 'xya' ? discord_js_1.ButtonStyle.Primary : discord_js_1.ButtonStyle.Secondary)
+            .setDisabled(settings.shop_xya_enabled === 0), new discord_js_1.ButtonBuilder()
+            .setCustomId('shop_music')
+            .setLabel('🎵 AI Music')
+            .setStyle(activeCallback === 'music' ? discord_js_1.ButtonStyle.Primary : discord_js_1.ButtonStyle.Secondary)
+            .setDisabled(settings.shop_music_enabled === 0), new discord_js_1.ButtonBuilder()
+            .setCustomId('shop_osu')
+            .setLabel('🎯 Osu Mapping')
+            .setStyle(activeCallback === 'osu' ? discord_js_1.ButtonStyle.Primary : discord_js_1.ButtonStyle.Secondary)
+            .setDisabled(settings.shop_osu_enabled === 0));
+        return row;
+    };
     const reply = await interaction.reply({
-        embeds: [buildXyaShopEmbed()],
-        components: [buildCategoryButtons(activeCategory)],
+        embeds: [getEmbedForCategory(activeCategory)],
+        components: [getButtons(activeCategory)],
     });
     // Collect button interactions for 2 minutes
     const collector = reply.createMessageComponentCollector({
@@ -83,9 +118,13 @@ const execute = async (interaction) => {
         // Determine category from button ID
         const category = btnInteraction.customId.replace('shop_', '');
         activeCategory = category;
+        // Double check enabled (in case changed mid-session, optional but good)
+        // If disabled, don't allow switch? 
+        // Logic: if button was disabled, they couldn't click. 
+        // But if they clicked, we assume it's valid.
         await btnInteraction.update({
             embeds: [getEmbedForCategory(category)],
-            components: [buildCategoryButtons(category)],
+            components: [getButtons(category)],
         });
     });
     collector.on('end', async () => {

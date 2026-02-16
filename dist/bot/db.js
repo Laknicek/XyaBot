@@ -4,7 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDueReminders = exports.addReminder = exports.getTodayBirthdays = exports.getBirthday = exports.setBirthday = exports.deleteMemory = exports.getMemories = exports.saveMemory = exports.getBotPerformance = exports.logBotStat = exports.updateBotStartTime = exports.getBotUptime = exports.getServerActivity = exports.getServerOverview = exports.getUserDetailed = exports.updateMessagesPerChannel = exports.getMessagesPerChannel = exports.updateUserActivityByDay = exports.getUserActivityByDay = exports.updateUserActivityByHour = exports.getUserActivityByHour = exports.getUserMessagesStats = exports.getEconomyHistory = exports.getCommandStats = exports.getCommandUsage = exports.getVoiceSessions = exports.endVoiceSession = exports.startVoiceSession = exports.logEconomyTransaction = exports.logCommandUsage = exports.logMessage = exports.getUserRelationship = exports.getAllUsers = exports.updateUser = exports.getUser = exports.deleteWordleGame = exports.saveWordleGame = exports.getWordleGame = exports.getInteractions = exports.logInteraction = exports.getBadges = exports.addBadge = exports.removeItem = exports.getInventory = exports.addItem = exports.updateMood = exports.getMood = exports.getGuildSetting = exports.setGuildSetting = exports.db = void 0;
-exports.getTicket = exports.closeTicket = exports.createTicket = exports.getWeeklyHighlights = exports.getMilestoneThresholds = exports.getMilestoneMultiplier = exports.getMilestoneTitle = exports.getActivePolls = exports.getRecentConfessions = exports.updatePollMessageId = exports.createPoll = exports.addConfession = exports.getUserReminders = exports.deleteReminder = void 0;
+exports.getPendingExpiredWyrs = exports.endWyr = exports.voteWyr = exports.getActiveWyr = exports.getWyr = exports.updateWyrMessageId = exports.createWyr = exports.getTicket = exports.closeTicket = exports.createTicket = exports.getWeeklyHighlights = exports.getMilestoneThresholds = exports.getMilestoneMultiplier = exports.getMilestoneTitle = exports.getActivePolls = exports.getRecentConfessions = exports.updatePollMessageId = exports.createPoll = exports.addConfession = exports.getUserReminders = exports.deleteReminder = void 0;
 const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
 const path_1 = __importDefault(require("path"));
 const dbPath = path_1.default.join(__dirname, '../../xyabot.sqlite');
@@ -90,7 +90,15 @@ db.exec(`
     ticket_transcript_channel_id TEXT,
     theme_id TEXT,
     theme_banner_id TEXT,
-    role_menus TEXT
+    role_menus TEXT,
+    theme_ignored_categories TEXT,
+    events_channel_id TEXT,
+    requests_channel_id TEXT,
+    shop_enabled INTEGER DEFAULT 1,
+    shop_xya_enabled INTEGER DEFAULT 1,
+    shop_music_enabled INTEGER DEFAULT 1,
+    shop_osu_enabled INTEGER DEFAULT 1,
+    wyr_channel_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS message_stats (
@@ -175,7 +183,6 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS polls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     message_id TEXT,
     question TEXT NOT NULL,
@@ -195,9 +202,26 @@ db.exec(`
     closed_at INTEGER
   );
 
+  CREATE TABLE IF NOT EXISTS events_wyr (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    channel_id TEXT,
+    message_id TEXT,
+    question TEXT,
+    option_a TEXT,
+    option_b TEXT,
+    votes_a TEXT DEFAULT '[]',
+    votes_b TEXT DEFAULT '[]',
+    ends_at INTEGER,
+    active INTEGER DEFAULT 1,
+    timestamp INTEGER
+  );
+
   INSERT OR IGNORE INTO global_stats (key, value) VALUES ('mood', '100');
   INSERT OR IGNORE INTO global_stats (key, value) VALUES ('bot_start_time', '0');
   INSERT OR IGNORE INTO global_stats (key, value) VALUES ('server_id', '');
+  INSERT OR IGNORE INTO global_stats (key, value) VALUES ('active_wyr_id', '0');
+  INSERT OR IGNORE INTO global_stats (key, value) VALUES ('active_wyr_date', '');
 `);
 // --- FULL ROBUST MIGRATION ---
 const migrate = () => {
@@ -247,7 +271,15 @@ const migrate = () => {
         { name: 'ticket_transcript_channel_id', type: 'TEXT' },
         { name: 'theme_id', type: 'TEXT' },
         { name: 'theme_banner_id', type: 'TEXT' },
-        { name: 'role_menus', type: 'TEXT' }
+        { name: 'role_menus', type: 'TEXT' },
+        { name: 'theme_ignored_categories', type: 'TEXT' },
+        { name: 'events_channel_id', type: 'TEXT' },
+        { name: 'requests_channel_id', type: 'TEXT' },
+        { name: 'shop_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'shop_xya_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'shop_music_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'shop_osu_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'wyr_channel_id', type: 'TEXT' }
     ];
     for (const col of requiredGuildCols) {
         if (!guildColumns.includes(col.name)) {
@@ -752,4 +784,71 @@ const getTicket = (channelId) => {
     return db.prepare('SELECT * FROM tickets WHERE channel_id = ?').get(channelId);
 };
 exports.getTicket = getTicket;
+// --- WYR SYSTEM ---
+const createWyr = (guildId, channelId, question, optionA, optionB, duration) => {
+    const endsAt = Date.now() + duration;
+    const info = db.prepare(`
+        INSERT INTO events_wyr (guild_id, channel_id, question, option_a, option_b, ends_at, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(guildId, channelId, question, optionA, optionB, endsAt, Date.now());
+    // Update global state
+    const now = new Date();
+    const dateKey = `${now.getMonth() + 1}-${now.getDate()}`;
+    db.prepare('UPDATE global_stats SET value = ? WHERE key = ?').run(dateKey, 'active_wyr_date');
+    return info.lastInsertRowid;
+};
+exports.createWyr = createWyr;
+const updateWyrMessageId = (id, messageId) => {
+    db.prepare('UPDATE events_wyr SET message_id = ? WHERE id = ?').run(messageId, id);
+};
+exports.updateWyrMessageId = updateWyrMessageId;
+const getWyr = (id) => {
+    const wyr = db.prepare('SELECT * FROM events_wyr WHERE id = ?').get(id);
+    if (!wyr)
+        return null;
+    return {
+        ...wyr,
+        votes_a: JSON.parse(wyr.votes_a || '[]'),
+        votes_b: JSON.parse(wyr.votes_b || '[]')
+    };
+};
+exports.getWyr = getWyr;
+const getActiveWyr = () => {
+    const wyr = db.prepare('SELECT * FROM events_wyr WHERE active = 1 ORDER BY timestamp DESC LIMIT 1').get();
+    if (!wyr)
+        return null;
+    return {
+        ...wyr,
+        votes_a: JSON.parse(wyr.votes_a || '[]'),
+        votes_b: JSON.parse(wyr.votes_b || '[]')
+    };
+};
+exports.getActiveWyr = getActiveWyr;
+const voteWyr = (id, userId, option) => {
+    const wyr = (0, exports.getWyr)(id);
+    if (!wyr || !wyr.active)
+        return false;
+    const votesA = new Set(wyr.votes_a);
+    const votesB = new Set(wyr.votes_b);
+    if (option === 'a') {
+        votesB.delete(userId);
+        votesA.add(userId);
+    }
+    else {
+        votesA.delete(userId);
+        votesB.add(userId);
+    }
+    db.prepare('UPDATE events_wyr SET votes_a = ?, votes_b = ? WHERE id = ?')
+        .run(JSON.stringify([...votesA]), JSON.stringify([...votesB]), id);
+    return true;
+};
+exports.voteWyr = voteWyr;
+const endWyr = (id) => {
+    db.prepare('UPDATE events_wyr SET active = 0 WHERE id = ?').run(id);
+};
+exports.endWyr = endWyr;
+const getPendingExpiredWyrs = () => {
+    return db.prepare('SELECT * FROM events_wyr WHERE active = 1 AND ends_at <= ?').all(Date.now());
+};
+exports.getPendingExpiredWyrs = getPendingExpiredWyrs;
 exports.default = db;
