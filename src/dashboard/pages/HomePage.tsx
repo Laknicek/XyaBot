@@ -6,6 +6,7 @@ import { GlassCard } from '../components/GlassCard';
 import { StatCard } from '../components/StatCard';
 import { XyaMoodWidget } from '../components/XyaMoodWidget';
 import { FeatureStatsRow } from '../components/FeatureStatsRow';
+import { API_BASE } from '../config';
 
 interface User {
     id: string;
@@ -44,11 +45,12 @@ export const HomePage: React.FC = () => {
     const [featureStats, setFeatureStats] = useState<any>({});
     const [loading, setLoading] = useState(true);
 
+
     const fetchData = () => {
         Promise.all([
-            fetch('/api/users').then(r => r.json()),
-            fetch('/api/status').then(r => r.json()),
-            fetch('/api/stats').then(r => r.json()), // Global stats for feature row
+            fetch(`${API_BASE}/api/users`).then(r => r.json()),
+            fetch(`${API_BASE}/api/status`).then(r => r.json()),
+            fetch(`${API_BASE}/api/stats`).then(r => r.json()), // Global stats for feature row
         ]).then(([usersData, statusData, statsData]) => {
             setUsers(usersData);
             setMoodData(statusData.currentMood);
@@ -57,7 +59,7 @@ export const HomePage: React.FC = () => {
         }).catch(() => setLoading(false));
 
         // Try to get activity data
-        fetch('/api/commands').then(r => r.json()).then(data => {
+        fetch(`${API_BASE}/api/commands`).then(r => r.json()).then(data => {
             if (data && data.length > 0) {
                 setActivity(data.slice(0, 10).map((d: any) => ({
                     name: d.command,

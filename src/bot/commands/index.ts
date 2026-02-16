@@ -28,6 +28,10 @@ import * as trivia from './trivia';
 import * as tod from './tod';
 import * as slots from './slots';
 import * as setup from './setup';
+import * as songRequest from './song-request';
+import * as music from './music';
+import * as osuMap from './osu-map';
+import * as manageGems from './manage-gems';
 
 export const commands = new Collection<string, Command>();
 
@@ -59,3 +63,7 @@ commands.set(trivia.data.name, trivia);
 commands.set(tod.data.name, tod);
 commands.set(slots.data.name, slots);
 commands.set(setup.data.name, setup);
+commands.set(songRequest.data.name, songRequest);
+commands.set(music.data.name, music);
+commands.set(osuMap.data.name, osuMap);
+commands.set(manageGems.data.name, manageGems);

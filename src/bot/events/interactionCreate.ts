@@ -20,6 +20,18 @@ export const execute = async (interaction: Interaction) => {
         return;
     }
 
+    // 0.5 DM Command Check (Friendship Requirement)
+    if (!interaction.guildId && interaction.isChatInputCommand()) {
+        const user = getUser(interaction.user.id, interaction.user.username);
+        // Requirement: 500 Friendship (Best Friends)
+        if (user.friendship_points < 500) {
+            return interaction.reply({
+                content: `🚫 **Access Denied!**\nI only talk in DMs with my besties! 💕\n(You need **500+ Friendship** to use commands here — chat with me in a server first!)`,
+                flags: [MessageFlags.Ephemeral]
+            });
+        }
+    }
+
     // 1. Slash Commands
     if (interaction.isChatInputCommand()) {
         // Management commands are always allowed for admins
@@ -125,6 +137,47 @@ export const execute = async (interaction: Interaction) => {
             await interaction.showModal(modal);
         }
 
+        // --- WYR BUTTONS ---
+        if (interaction.customId.startsWith('wyr_')) {
+            const parts = interaction.customId.split('_');
+            const choice = parts[1]; // a or b
+            const id = parseInt(parts[2]);
+
+            try {
+                const { voteWyr, getWyr } = await import('../db'); // Lazy import
+                const success = voteWyr(id, interaction.user.id, choice as 'a' | 'b');
+
+                if (!success) {
+                    return interaction.reply({ content: '❌ This poll has ended!', flags: [MessageFlags.Ephemeral] });
+                }
+
+                // Refresh Embed
+                const wyr = getWyr(id);
+                if (wyr) {
+                    const votesA = wyr.votes_a;
+                    const votesB = wyr.votes_b;
+                    const totalVotes = votesA.length + votesB.length;
+                    const pctA = totalVotes > 0 ? Math.round((votesA.length / totalVotes) * 100) : 0;
+                    const pctB = totalVotes > 0 ? Math.round((votesB.length / totalVotes) * 100) : 0;
+
+                    const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+
+                    // Update Fields
+                    embed.setFields(
+                        { name: `🅰️ Option A`, value: `${wyr.option_a}\n${'▓'.repeat(Math.floor(pctA / 10))}${'░'.repeat(10 - Math.floor(pctA / 10))} ${pctA}% (${votesA.length})`, inline: false },
+                        { name: `🅱️ Option B`, value: `${wyr.option_b}\n${'▓'.repeat(Math.floor(pctB / 10))}${'░'.repeat(10 - Math.floor(pctB / 10))} ${pctB}% (${votesB.length})`, inline: false }
+                    );
+                    embed.setFooter({ text: `Daily Question • Total Votes: ${totalVotes}` });
+
+                    await interaction.update({ embeds: [embed] });
+                }
+            } catch (error) {
+                console.error("WYR Error:", error);
+                await interaction.reply({ content: '❌ Error processing vote.', flags: [MessageFlags.Ephemeral] });
+            }
+            return;
+        }
+
         if (interaction.customId === 'create_ticket') {
             if (!settings?.ticket_category_id) {
                 return interaction.reply({ content: "❌ Tickets are not configured yet! Ask an admin to run `/setup tickets config`.", flags: [MessageFlags.Ephemeral] });
@@ -210,6 +263,78 @@ export const execute = async (interaction: Interaction) => {
             }, 5000);
         }
 
+
+
+        // --- SONG REQUEST BUTTONS ---
+        if (interaction.customId === 'approve_song' || interaction.customId === 'decline_song') {
+            // Check permissions (e.g. Manage Messages or Mute Members)
+            if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageMessages)) {
+                return interaction.reply({ content: "❌ You don't have permission to manage requests!", flags: [MessageFlags.Ephemeral] });
+            }
+
+            const isApprove = interaction.customId === 'approve_song';
+            const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+
+            // Update Status
+            if (isApprove) {
+                embed.setColor(0x00FF00); // Green
+                embed.setFooter({ text: `Status: Approved by ${interaction.user.tag}` });
+            } else {
+                embed.setColor(0xFF0000); // Red
+                embed.setFooter({ text: `Status: Declined by ${interaction.user.tag}` });
+            }
+
+            // Update Buttons (Keep both enabled so they can switch decision)
+            const row = new ActionRowBuilder<ButtonBuilder>()
+                .addComponents(
+                    new ButtonBuilder()
+                        .setCustomId('approve_song')
+                        .setLabel('Approve')
+                        .setStyle(ButtonStyle.Success)
+                        .setEmoji('✅')
+                        .setDisabled(isApprove), // Disable the one just clicked? Or keep enabled to re-trigger? 
+                    // User requirement: "make it if wrong decicion made we can cahnge from aprove to decline and decline to aprove any time we want!"
+                    // So we should probably keep them enabled, OR toggle the disabled state.
+                    // Let's just keep them ENABLED but maybe visually indicate the current state?
+                    // Discord buttons don't have a "selected" state other than disabled/style.
+                    // Let's disable the CURRENTLY selected one to show it's active state.
+
+                    new ButtonBuilder()
+                        .setCustomId('decline_song')
+                        .setLabel('Decline')
+                        .setStyle(ButtonStyle.Danger)
+                        .setEmoji('✖️')
+                        .setDisabled(!isApprove)
+                );
+
+            await interaction.update({ embeds: [embed], components: [row] });
+
+            // --- NOTIFY USER ---
+            const description = embed.data.description || '';
+            const match = description.match(/<@(\d+)>/);
+            if (match) {
+                const requesterId = match[1];
+                try {
+                    const requester = await interaction.client.users.fetch(requesterId);
+                    const action = isApprove ? 'Approved' : 'Declined';
+                    const color = isApprove ? 0x00FF00 : 0xFF0000;
+
+                    const dmEmbed = new EmbedBuilder()
+                        .setTitle(`🎵 Song Request ${action}!`)
+                        .setDescription(`Your song request has been **${action}** by **${interaction.user.tag}**!`)
+                        .addFields({ name: 'Request Info', value: description.split('\n').slice(1).join('\n') || 'Content unavailable' }) // Try to show original content
+                        .setColor(color)
+                        .setTimestamp();
+
+                    await requester.send({ embeds: [dmEmbed] });
+                } catch (e) {
+                    // Start a background logic or just log
+                    console.error(`[SongRequest] Failed to DM user ${requesterId}:`, e);
+                }
+            }
+            return;
+        }
+
         // 6. Theme System Buttons
         if (interaction.customId.startsWith('theme_')) {
             // isAdmin check again for safety
@@ -264,11 +389,25 @@ export const execute = async (interaction: Interaction) => {
                     }
                 }
 
+                // --- IGNORE LIST ---
+                let ignoredCats: string[] = [];
+                try {
+                    ignoredCats = settings?.theme_ignored_categories ? JSON.parse(settings.theme_ignored_categories) : [];
+                } catch { }
+
                 // Filter: Text (0), Voice (2), Category (4)
                 const channels = interaction.guild?.channels.cache
                     .filter(c => c.type === 0 || c.type === 2 || c.type === 4)
                     .filter(c => !c.name.includes('staff') && !c.name.includes('log') && !c.name.includes('admin'))
-                    .filter(c => c.id !== bannerId); // Exclude the banner from normal renaming
+                    .filter(c => c.id !== bannerId) // Exclude banner
+                    // IGNORE LOGIC
+                    .filter(c => {
+                        // If it IS one of the ignored categories
+                        if (ignoredCats.includes(c.id)) return false;
+                        // If it is a CHILD of an ignored category
+                        if (c.parentId && ignoredCats.includes(c.parentId)) return false;
+                        return true;
+                    });
 
 
 
@@ -474,7 +613,8 @@ export const execute = async (interaction: Interaction) => {
                 }
             }
         }
-        return;
+
+
     }
 
     // 3. Modals

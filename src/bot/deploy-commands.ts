@@ -21,11 +21,33 @@ export const deployCommands = async () => {
         const commandData = Array.from(commands.values()).map(c => c.data.toJSON());
 
         if (process.env.GUILD_ID) {
-            console.log(`Deploying to specific guild: ${process.env.GUILD_ID}`);
-            await rest.put(
-                Routes.applicationGuildCommands(clientId, process.env.GUILD_ID),
-                { body: commandData },
-            );
+            let guildIds: string[] = [];
+            try {
+                // Try parsing as JSON first (handles ["id1", "id2"])
+                const parsed = JSON.parse(process.env.GUILD_ID);
+                if (Array.isArray(parsed)) {
+                    guildIds = parsed;
+                } else {
+                    guildIds = [process.env.GUILD_ID];
+                }
+            } catch {
+                // If JSON parse fails, split by comma (handles id1,id2)
+                guildIds = process.env.GUILD_ID.split(',').map(id => id.trim()).filter(id => id.length > 0);
+            }
+
+            console.log(`Deploying to ${guildIds.length} specific guild(s)...`);
+
+            for (const guildId of guildIds) {
+                try {
+                    console.log(`Deploying to guild: ${guildId}`);
+                    await rest.put(
+                        Routes.applicationGuildCommands(clientId, guildId),
+                        { body: commandData },
+                    );
+                } catch (error) {
+                    console.error(`Failed to deploy to guild ${guildId}:`, error);
+                }
+            }
         } else {
             console.log('Deploying globally (may take 1 hour to propagate)...');
             await rest.put(

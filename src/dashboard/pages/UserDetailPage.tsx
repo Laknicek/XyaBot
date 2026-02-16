@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { GlassCard } from '../components/GlassCard';
 import { StatCard } from '../components/StatCard';
+import { API_BASE } from '../config';
 
 const getLevel = (xp: number) => Math.floor(Math.sqrt(xp / 100));
 const xpForLevel = (level: number) => level * level * 100;
@@ -111,11 +112,11 @@ export const UserDetailPage: React.FC = () => {
     useEffect(() => {
         if (!id) return;
         Promise.all([
-            fetch(`/api/user/${id}`).then(r => r.json()),
-            fetch(`/api/interactions/${id}`).then(r => r.json()),
-            fetch(`/api/memories/${id}`).then(r => r.json()),
-            fetch(`/api/economy/${id}`).then(r => r.json()),
-            fetch(`/api/voice/${id}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/user/${id}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/interactions/${id}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/memories/${id}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/economy/${id}`).then(r => r.json()),
+            fetch(`${API_BASE}/api/voice/${id}`).then(r => r.json()),
         ]).then(([userData, interactionsData, memoriesData, economyData, voiceData]) => {
             setUser(userData);
             setInteractions(interactionsData || []);

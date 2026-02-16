@@ -5,6 +5,7 @@ import { GlassCard } from '../components/GlassCard';
 import { StatCard } from '../components/StatCard';
 import { XyaMoodWidget } from '../components/XyaMoodWidget';
 import { FeatureStatsRow } from '../components/FeatureStatsRow';
+import { API_BASE } from '../config';
 
 const formatDuration = (ms: number) => {
     const s = Math.floor(ms / 1000);
@@ -46,12 +47,13 @@ export const BotStatusPage: React.FC = () => {
     const [liveUptime, setLiveUptime] = useState(0);
     const startTimeRef = useRef<number>(0);
 
+
     const fetchData = () => {
         Promise.all([
-            fetch('/api/uptime').then(r => r.json()),
-            fetch('/api/commands').then(r => r.json()),
-            fetch('/api/status').then(r => r.json()),
-            fetch('/api/stats').then(r => r.json()),
+            fetch(`${API_BASE}/api/uptime`).then(r => r.json()),
+            fetch(`${API_BASE}/api/commands`).then(r => r.json()),
+            fetch(`${API_BASE}/api/status`).then(r => r.json()),
+            fetch(`${API_BASE}/api/stats`).then(r => r.json()),
         ]).then(([uptimeData, commandsData, statusData, statsData]) => {
             setData(uptimeData);
             setCommands(commandsData || []);
@@ -93,7 +95,7 @@ export const BotStatusPage: React.FC = () => {
     const successRate = totalCommands > 0 ? ((totalCommands - errorCount) / totalCommands * 100).toFixed(1) : '100.0';
 
     const features = [
-        { name: 'Gemma3 Brain', desc: 'AI Conversations', icon: '🧠', color: '#FF69B4' },
+        { name: 'Gemini AI', desc: 'Conversational', icon: '🧠', color: '#FF69B4' },
         { name: 'Voice Synthesis', desc: 'Active', icon: '🗣️', color: '#00FFFF' },
         { name: 'Memory System', desc: 'Long-term Recall', icon: '💾', color: '#FFD700' },
         { name: 'Mood Engine', desc: 'Dynamic Emotions', icon: '🎭', color: '#8A2BE2' },
@@ -145,10 +147,10 @@ export const BotStatusPage: React.FC = () => {
                     </div>
                     <div>
                         <div style={{ color: '#fff', fontWeight: 800, fontSize: '1.4rem', fontFamily: "'Fredoka', sans-serif" }}>
-                            Powered by Gemma3 4B
+                            Powered by Gemini 2.5 Flash
                         </div>
                         <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.9rem' }}>
-                            Running locally via Ollama • Multimodal (Vision) • Context: 128k tokens
+                            Google AI • Multimodal (Vision) • 1M+ Context Window
                         </div>
                     </div>
                 </div>

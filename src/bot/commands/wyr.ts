@@ -30,72 +30,45 @@ export const data = new SlashCommandBuilder()
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator);
 
 export const execute: Command['execute'] = async (interaction) => {
+    // 0. Manual Trigger (Admin Only)
+    // 1. Generate Scenario (or pick random from local if API fails)
+    // 2. Post Persistent Message
+
+    // For manual command, we can just pick a random local one to be fast, OR assume admin wants to force a daily one.
+    // Let's use local for manual speed but persistent DB.
+
     const scenario = SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];
-    const votes = { a: new Set<string>(), b: new Set<string>() };
-    const DURATION = 8 * 60 * 60 * 1000; // 8 hours
-    const endTime = Date.now() + DURATION;
+    const duration = 24 * 60 * 60 * 1000; // Manual ones last 24h? Or 8h? Let's say 8h.
 
-    const buildEmbed = () => {
-        const totalVotes = votes.a.size + votes.b.size;
-        const pctA = totalVotes > 0 ? Math.round((votes.a.size / totalVotes) * 100) : 0;
-        const pctB = totalVotes > 0 ? Math.round((votes.b.size / totalVotes) * 100) : 0;
+    // Lazy import
+    const { createWyr, updateWyrMessageId } = await import('../db');
 
-        const remaining = Math.max(0, endTime - Date.now());
-        const hours = Math.floor(remaining / (1000 * 60 * 60));
-        const mins = Math.floor((remaining % (1000 * 60 * 60)) / (1000 * 60));
+    // Create DB Entry
+    const wyrId = createWyr(interaction.guildId!, interaction.channelId, `Would rather ${scenario.a} OR ${scenario.b}?`, scenario.a, scenario.b, duration);
 
-        return new EmbedBuilder()
-            .setColor(0xFF69B4)
-            .setTitle('🤔 Would You Rather...')
-            .addFields(
-                { name: `🅰️ ${scenario.a}`, value: totalVotes > 0 ? `${'▓'.repeat(Math.floor(pctA / 5))}${'░'.repeat(20 - Math.floor(pctA / 5))} ${pctA}% (${votes.a.size})` : '`vote to see results!`', inline: false },
-                { name: `🅱️ ${scenario.b}`, value: totalVotes > 0 ? `${'▓'.repeat(Math.floor(pctB / 5))}${'░'.repeat(20 - Math.floor(pctB / 5))} ${pctB}% (${votes.b.size})` : '`vote to see results!`', inline: false }
-            )
-            .setFooter({ text: `${totalVotes} vote${totalVotes !== 1 ? 's' : ''} • ends in ${hours}h ${mins}m` });
-    };
+    const embed = new EmbedBuilder()
+        .setColor(0xFF69B4)
+        .setTitle('🤔 Would You Rather...')
+        .setDescription(`**Would you rather ${scenario.a} OR ${scenario.b}?**`)
+        .addFields(
+            { name: '🅰️ Option A', value: scenario.a, inline: true },
+            { name: '🅱️ Option B', value: scenario.b, inline: true }
+        )
+        .setFooter({ text: `ENDS IN 8 HOURS • Vote to see results!` });
 
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-        new ButtonBuilder().setCustomId('wyr_a').setLabel(`🅰️ ${scenario.a}`).setStyle(ButtonStyle.Primary),
-        new ButtonBuilder().setCustomId('wyr_b').setLabel(`🅱️ ${scenario.b}`).setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId(`wyr_a_${wyrId}`).setLabel(scenario.a.substring(0, 80)).setStyle(ButtonStyle.Primary).setEmoji('🅰️'),
+        new ButtonBuilder().setCustomId(`wyr_b_${wyrId}`).setLabel(scenario.b.substring(0, 80)).setStyle(ButtonStyle.Danger).setEmoji('🅱️'),
     );
 
-    const reply = await interaction.reply({ embeds: [buildEmbed()], components: [row] });
-
-    const collector = reply.createMessageComponentCollector({
-        componentType: ComponentType.Button,
-        time: DURATION,
+    const reply = await interaction.reply({
+        content: `<@&1473070225443393617> 🧠 **Would You Rather...**`,
+        embeds: [embed],
+        components: [row],
+        fetchReply: true
     });
 
-    collector.on('collect', async (btn) => {
-        // Remove from opposite vote if they change their mind
-        if (btn.customId === 'wyr_a') {
-            votes.b.delete(btn.user.id);
-            votes.a.add(btn.user.id);
-        } else {
-            votes.a.delete(btn.user.id);
-            votes.b.add(btn.user.id);
-        }
-
-        await btn.update({ embeds: [buildEmbed()], components: [row] });
-    });
-
-    collector.on('end', async () => {
-        const disabledRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-            new ButtonBuilder().setCustomId('wyr_a').setLabel(`🅰️ ${scenario.a}`).setStyle(ButtonStyle.Primary).setDisabled(true),
-            new ButtonBuilder().setCustomId('wyr_b').setLabel(`🅱️ ${scenario.b}`).setStyle(ButtonStyle.Danger).setDisabled(true),
-        );
-
-        const totalVotes = votes.a.size + votes.b.size;
-        const winner = votes.a.size > votes.b.size ? scenario.a : votes.b.size > votes.a.size ? scenario.b : 'tie lol';
-        const xya_comment = totalVotes === 0
-            ? 'nobody voted... ok then 💀'
-            : winner === 'tie lol'
-                ? 'its a tie omg yall are split 😭'
-                : `"${winner}" won and honestly... valid 💅`;
-
-        const finalEmbed = buildEmbed().setFooter({ text: `voting ended • ${xya_comment}` });
-        try {
-            await reply.edit({ embeds: [finalEmbed], components: [disabledRow] });
-        } catch { }
-    });
+    if (reply) {
+        updateWyrMessageId(wyrId, reply.id);
+    }
 };

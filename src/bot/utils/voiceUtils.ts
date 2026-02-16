@@ -108,10 +108,20 @@ async function playTrack(guildId: string, url: string, connection: VoiceConnecti
     if (!state.isTTSPlaying) {
         try {
             console.log(`[Voice] Starting playback for: ${url}`);
-            const ytDlpPath = path.resolve(__dirname, '../../../yt-dlp.exe');
 
-            // Create a child process for yt-dlp to stream raw audio
-            const ytDlpProcess = spawn(ytDlpPath, [
+            // Determine yt-dlp path based on OS
+            const isWindows = process.platform === 'win32';
+            const binName = isWindows ? 'yt-dlp.exe' : 'yt-dlp';
+            const localPath = path.resolve(__dirname, `../../../${binName}`);
+
+            let ytDlpPath = localPath;
+            if (!fs.existsSync(localPath) && !isWindows) {
+                // on Linux/Mac, if local binary missing, try global command
+                ytDlpPath = 'yt-dlp';
+            }
+
+            // Prepare arguments
+            const args = [
                 url,
                 '-o', '-',
                 '-q',
@@ -120,9 +130,34 @@ async function playTrack(guildId: string, url: string, connection: VoiceConnecti
                 '--force-ipv4', // Reliability fix
                 '--geo-bypass',
                 '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                '--socket-timeout', '30',
-                '--retries', '10'
-            ]);
+                '--retries', '10',
+                // Fixes for server environments
+                '--js-runtimes', 'node'
+            ];
+
+            // Check for cookies.txt in multiple locations
+            const cookiesPaths = [
+                path.resolve(process.cwd(), 'cookies.txt'), // Root (most likely)
+                path.resolve(__dirname, '../../../cookies.txt'), // Relative from file
+            ];
+
+            let cookiesFound = false;
+            for (const p of cookiesPaths) {
+                if (fs.existsSync(p)) {
+                    args.push('--cookies', p);
+                    console.log(`[Voice] Using cookies from: ${p}`);
+                    cookiesFound = true;
+                    break;
+                }
+            }
+
+            if (!cookiesFound) {
+                console.warn(`[Voice] WARNING: cookies.txt not found! YouTube playback may fail.`);
+                console.log(`[Voice] Searched in: ${cookiesPaths.join(', ')}`);
+            }
+
+            // Create a child process for yt-dlp to stream raw audio
+            const ytDlpProcess = spawn(ytDlpPath, args);
 
             const resource = createAudioResource(ytDlpProcess.stdout, {
                 inlineVolume: true
@@ -231,6 +266,50 @@ const SLANG_MAP: Record<string, string> = {
     'srsly': 'seriously',
     'bb': 'baby',
     'bff': 'best friend forever',
+    'wdym': 'what do you mean',
+    'idts': 'I don\'t think so',
+    'faq': 'frequently asked questions',
+    'ftw': 'for the win',
+    'hmu': 'hit me up',
+    'icymi': 'in case you missed it',
+    'jk': 'just kidding',
+    'n/a': 'not applicable',
+    'omw': 'on my way',
+    'pov': 'point of view',
+    'ppl': 'people',
+    'rip': 'rest in peace',
+    'tba': 'to be announced',
+    'tbc': 'to be continued',
+    'tbd': 'to be determined',
+    'tmi': 'too much information',
+    'wth': 'what the hell',
+    'wtf': 'what the fuck',
+    'ygti': 'you get the idea',
+    'yta': 'you the asshole',
+    'nta': 'not the asshole',
+    'ama': 'ask me anything',
+    'eli5': 'explain like I\'m five',
+    'tl;dr': 'too long; didn\'t read',
+    'mf': 'motherfucker',
+    'mfw': 'my face when',
+    'tfw': 'that feeling when',
+    'mrw': 'my reaction when',
+    'oc': 'original content',
+    'op': 'original poster',
+    'os': 'operating system',
+    'pm': 'private message',
+    'rt': 'retweet',
+    'so': 'significant other',
+    'til': 'today I learned',
+    'wb': 'welcome back',
+    'wys': 'what you saying',
+    'wyd': 'what you doing',
+    'wyg': 'what you got',
+    'dw': 'don\'t worry',
+    'mb': 'my bad',
+    'g2g': 'got to go',
+    'gn': 'good night',
+    'gm': 'good morning',
 };
 
 function expandSlang(text: string): string {

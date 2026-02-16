@@ -1,4 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 
 interface Conversation {
     user_id: string;
@@ -34,7 +36,7 @@ export const ConversationsPage: React.FC = () => {
 
     useEffect(() => {
         setLoading(true);
-        fetch(`/api/conversations?limit=${pageSize}&offset=${page * pageSize}`)
+        fetch(`${API_BASE}/api/conversations?limit=${pageSize}&offset=${page * pageSize}`)
             .then(r => r.json())
             .then(data => {
                 setConversations(data.conversations || []);

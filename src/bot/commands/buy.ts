@@ -12,7 +12,14 @@ export const data = new SlashCommandBuilder()
             .setRequired(true)
             .addChoices(...SHOP_ITEMS.map(i => ({ name: i.name, value: i.id }))));
 
+import { getGuildSetting } from '../db';
+
 export const execute: Command['execute'] = async (interaction) => {
+    const settings = getGuildSetting(interaction.guildId!) || {};
+    if (settings.shop_enabled === 0 || settings.shop_xya_enabled === 0) {
+        return interaction.reply({ content: '🚫 The **Xya Shop** is currently closed.', flags: [MessageFlags.Ephemeral] });
+    }
+
     const itemId = interaction.options.getString('item')!;
     const item = SHOP_ITEMS.find(i => i.id === itemId)!;
     const user = getUser(interaction.user.id, interaction.user.username);

@@ -85,7 +85,15 @@ db.exec(`
     ticket_transcript_channel_id TEXT,
     theme_id TEXT,
     theme_banner_id TEXT,
-    role_menus TEXT
+    role_menus TEXT,
+    theme_ignored_categories TEXT,
+    events_channel_id TEXT,
+    requests_channel_id TEXT,
+    shop_enabled INTEGER DEFAULT 1,
+    shop_xya_enabled INTEGER DEFAULT 1,
+    shop_music_enabled INTEGER DEFAULT 1,
+    shop_osu_enabled INTEGER DEFAULT 1,
+    wyr_channel_id TEXT
   );
 
   CREATE TABLE IF NOT EXISTS message_stats (
@@ -170,7 +178,6 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS polls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     message_id TEXT,
     question TEXT NOT NULL,
@@ -190,9 +197,26 @@ db.exec(`
     closed_at INTEGER
   );
 
+  CREATE TABLE IF NOT EXISTS events_wyr (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    channel_id TEXT,
+    message_id TEXT,
+    question TEXT,
+    option_a TEXT,
+    option_b TEXT,
+    votes_a TEXT DEFAULT '[]',
+    votes_b TEXT DEFAULT '[]',
+    ends_at INTEGER,
+    active INTEGER DEFAULT 1,
+    timestamp INTEGER
+  );
+
   INSERT OR IGNORE INTO global_stats (key, value) VALUES ('mood', '100');
   INSERT OR IGNORE INTO global_stats (key, value) VALUES ('bot_start_time', '0');
   INSERT OR IGNORE INTO global_stats (key, value) VALUES ('server_id', '');
+  INSERT OR IGNORE INTO global_stats (key, value) VALUES ('active_wyr_id', '0');
+  INSERT OR IGNORE INTO global_stats (key, value) VALUES ('active_wyr_date', '');
 `);
 
 // --- FULL ROBUST MIGRATION ---
@@ -245,7 +269,15 @@ const migrate = () => {
         { name: 'ticket_transcript_channel_id', type: 'TEXT' },
         { name: 'theme_id', type: 'TEXT' },
         { name: 'theme_banner_id', type: 'TEXT' },
-        { name: 'role_menus', type: 'TEXT' }
+        { name: 'role_menus', type: 'TEXT' },
+        { name: 'theme_ignored_categories', type: 'TEXT' },
+        { name: 'events_channel_id', type: 'TEXT' },
+        { name: 'requests_channel_id', type: 'TEXT' },
+        { name: 'shop_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'shop_xya_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'shop_music_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'shop_osu_enabled', type: 'INTEGER DEFAULT 1' },
+        { name: 'wyr_channel_id', type: 'TEXT' }
     ];
 
     for (const col of requiredGuildCols) {
@@ -737,6 +769,75 @@ export const closeTicket = (channelId: string) => {
 
 export const getTicket = (channelId: string) => {
     return db.prepare('SELECT * FROM tickets WHERE channel_id = ?').get(channelId) as any;
+};
+
+// --- WYR SYSTEM ---
+export const createWyr = (guildId: string, channelId: string, question: string, optionA: string, optionB: string, duration: number) => {
+    const endsAt = Date.now() + duration;
+    const info = db.prepare(`
+        INSERT INTO events_wyr (guild_id, channel_id, question, option_a, option_b, ends_at, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(guildId, channelId, question, optionA, optionB, endsAt, Date.now());
+
+    // Update global state
+    const now = new Date();
+    const dateKey = `${now.getMonth() + 1}-${now.getDate()}`;
+    db.prepare('UPDATE global_stats SET value = ? WHERE key = ?').run(dateKey, 'active_wyr_date');
+
+    return info.lastInsertRowid;
+};
+
+export const updateWyrMessageId = (id: number | bigint, messageId: string) => {
+    db.prepare('UPDATE events_wyr SET message_id = ? WHERE id = ?').run(messageId, id);
+};
+
+export const getWyr = (id: number) => {
+    const wyr = db.prepare('SELECT * FROM events_wyr WHERE id = ?').get(id) as any;
+    if (!wyr) return null;
+    return {
+        ...wyr,
+        votes_a: JSON.parse(wyr.votes_a || '[]'),
+        votes_b: JSON.parse(wyr.votes_b || '[]')
+    };
+};
+
+export const getActiveWyr = () => {
+    const wyr = db.prepare('SELECT * FROM events_wyr WHERE active = 1 ORDER BY timestamp DESC LIMIT 1').get() as any;
+    if (!wyr) return null;
+    return {
+        ...wyr,
+        votes_a: JSON.parse(wyr.votes_a || '[]'),
+        votes_b: JSON.parse(wyr.votes_b || '[]')
+    };
+};
+
+export const voteWyr = (id: number, userId: string, option: 'a' | 'b') => {
+    const wyr = getWyr(id);
+    if (!wyr || !wyr.active) return false;
+
+    const votesA = new Set(wyr.votes_a);
+    const votesB = new Set(wyr.votes_b);
+
+    if (option === 'a') {
+        votesB.delete(userId);
+        votesA.add(userId);
+    } else {
+        votesA.delete(userId);
+        votesB.add(userId);
+    }
+
+    db.prepare('UPDATE events_wyr SET votes_a = ?, votes_b = ? WHERE id = ?')
+        .run(JSON.stringify([...votesA]), JSON.stringify([...votesB]), id);
+
+    return true;
+};
+
+export const endWyr = (id: number) => {
+    db.prepare('UPDATE events_wyr SET active = 0 WHERE id = ?').run(id);
+};
+
+export const getPendingExpiredWyrs = () => {
+    return db.prepare('SELECT * FROM events_wyr WHERE active = 1 AND ends_at <= ?').all(Date.now()) as any[];
 };
 
 export default db;

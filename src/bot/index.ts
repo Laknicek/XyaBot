@@ -2,10 +2,11 @@ import { setupClient } from './client';
 import { startServer } from '../server';
 import { deployCommands } from './deploy-commands';
 import dotenv from 'dotenv';
-import { getUser, updateUser, db, getDueReminders, deleteReminder, getTodayBirthdays, getWeeklyHighlights, updateBotStartTime } from './db';
+import { getUser, updateUser, db, getDueReminders, deleteReminder, getTodayBirthdays, getWeeklyHighlights, updateBotStartTime, getGuildSetting } from './db';
 import { startTTSServer } from './utils/startTts';
 import { cleanupAudioFolder } from './utils/voiceUtils';
 import { checkOllamaHealth, getCurrentMood } from './ai';
+import { eventSystem } from './events/EventSystem';
 
 dotenv.config();
 
@@ -90,34 +91,12 @@ const main = async () => {
             }
         }, 60 * 60 * 1000);
 
-        // --- Server Events (random, every 1-4 hours) ---
-        const scheduleNextEvent = () => {
-            const delay = (1 + Math.random() * 3) * 60 * 60 * 1000; // 1-4 hours
-            setTimeout(async () => {
-                try {
-                    const events = [
-                        { name: '🎵 Karaoke Night', desc: 'xya is feeling musical!! everyone who chats in the next 10 minutes gets **2x XP**! 🎤✨', multiplier: 2 },
-                        { name: '💰 Gem Rain', desc: 'omg its raining gems!! everyone who sends a message gets **bonus 50 coins**! 💎🌧️', coins: 50 },
-                        { name: '🎲 Lucky Hour', desc: 'feeling lucky?? chat messages give **3x XP** for the next 15 minutes! 🍀', multiplier: 3 },
-                        { name: '💕 Friendship Festival', desc: 'xya is feeling extra loving!! all friendship gains are **doubled** this hour 💕🥰', friendship: true },
-                        { name: '🌟 Star Shower', desc: 'a shower of stars!! first 5 people to chat get **100 bonus coins** ⭐✨', coins: 100 },
-                    ];
-                    const event = events[Math.floor(Math.random() * events.length)];
+        // --- Server Events (Managed by EventSystem) ---
+        eventSystem.init(client);
 
-                    for (const guild of client.guilds.cache.values()) {
-                        const channel = guild.channels.cache.find((c: any) => c.isTextBased() && c.permissionsFor?.(guild.members.me!)?.has('SendMessages'));
-                        if (channel?.isSendable()) {
-                            await channel.send(`🎉 **${event.name}!**\n${event.desc}`);
-                        }
-                    }
-                    console.log(`[Event] 🎉 Triggered: ${event.name}`);
-                } catch (e) {
-                    console.error("[Event] Error:", e);
-                }
-                scheduleNextEvent();
-            }, delay);
-        };
-        scheduleNextEvent();
+        // --- Scheduler (Daily WYR, etc) ---
+        const { initScheduler } = await import('./utils/scheduler');
+        initScheduler(client);
 
         // --- Weekly Highlights (every Sunday at noon) ---
         setInterval(async () => {
@@ -152,7 +131,19 @@ const main = async () => {
 
                     highlightText += `\nyou guys are amazing, keep it up!! 💕✨ — Xya`;
 
-                    const channel = guild.channels.cache.find((c: any) => c.isTextBased() && c.permissionsFor?.(guild.members.me!)?.has('SendMessages'));
+                    highlightText += `\nyou guys are amazing, keep it up!! 💕✨ — Xya`;
+
+                    const settings = getGuildSetting(guild.id);
+                    let channel;
+
+                    if (settings?.events_channel_id) {
+                        channel = guild.channels.cache.get(settings.events_channel_id);
+                    }
+
+                    if (!channel) {
+                        channel = guild.channels.cache.find((c: any) => c.isTextBased() && c.permissionsFor?.(guild.members.me!)?.has('SendMessages'));
+                    }
+
                     if (channel?.isSendable()) {
                         await channel.send(highlightText);
                     }

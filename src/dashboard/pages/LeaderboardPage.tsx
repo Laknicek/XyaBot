@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { GlassCard } from '../components/GlassCard';
+import { API_BASE } from '../config';
 
 interface User {
     id: string;
@@ -40,7 +41,7 @@ export const LeaderboardPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch(`/api/leaderboard?sort=${activeTab}`)
+        fetch(`${API_BASE}/api/leaderboard?sort=${activeTab}`)
             .then(r => r.json())
             .then(data => { setUsers(data); setLoading(false); })
             .catch(() => setLoading(false));

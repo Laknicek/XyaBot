@@ -1,6 +1,6 @@
-import { Message, Events, ChannelType, EmbedBuilder, AttachmentBuilder } from 'discord.js';
+import { Message, Events, ChannelType, EmbedBuilder, AttachmentBuilder, TextChannel } from 'discord.js';
 import { getUser, updateUser, logInteraction, getInteractions, getWordleGame, saveWordleGame, deleteWordleGame, getMood, updateMood, getUserRelationship, getGuildSetting, logMessage, updateUserActivityByHour, updateUserActivityByDay, updateMessagesPerChannel, logEconomyTransaction, saveMemory, getMilestoneTitle, getMilestoneThresholds, getMilestoneMultiplier } from '../db';
-import { generateResponse } from '../ai';
+import { generateResponse, scanAttachment } from '../ai';
 import { generateWordleBoard } from '../utils/wordleGen';
 import { checkToxicity, ToxicityCategory } from '../utils/moderation';
 import { commands } from '../commands';
@@ -9,6 +9,7 @@ import * as dailyCommand from '../commands/daily';
 import * as rpsCommand from '../commands/rps';
 import * as coinflipCommand from '../commands/coinflip';
 import * as joinCommand from '../commands/join';
+import { eventSystem } from './EventSystem';
 
 const SPAM_THRESHOLD = 5;
 const SPAM_WINDOW = 5000;
@@ -47,6 +48,37 @@ const getLevel = (xp: number) => Math.floor(Math.sqrt(xp / 100));
 export const name = Events.MessageCreate;
 export const execute = async (message: Message) => {
     if (message.author.bot) return;
+
+    // --- EVENT SYSTEM ---
+    eventSystem.handleMessage(message);
+
+    // --- ATTACHMENT MODERATION ---
+    if (message.attachments.size > 0 && message.guild) {
+        const checkable = message.attachments.filter(a =>
+            a.contentType?.startsWith('image/') || a.contentType?.startsWith('video/')
+        );
+
+        if (checkable.size > 0) {
+            for (const attachment of checkable.values()) {
+                const scan = await scanAttachment(attachment.url, attachment.contentType!);
+                if (!scan.safe) {
+                    try {
+                        if (message.deletable) await message.delete();
+                        const warningMsg = await (message.channel as TextChannel).send(`⚠️ <@${message.author.id}>, your attachment was removed for **${scan.reason || 'Safety Violation'}**. Please be careful! ♪`);
+
+                        // Delete warning after 10s
+                        setTimeout(() => warningMsg.delete().catch(() => { }), 10000);
+
+                        // Log violation
+                        logInteraction(message.author.id, message.author.username, `[Deleted Attachment: ${scan.reason}]`, "Violation", "Hateful");
+                    } catch (e) {
+                        console.error("[AutoMod] Failed to action attachment:", e);
+                    }
+                    return; // STOP PROCESSING
+                }
+            }
+        }
+    }
 
     // Zero-Latency Debug Console
     console.log(`[Message] ${message.author.username}: ${message.content}`);

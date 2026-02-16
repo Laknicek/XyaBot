@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 
 interface CommandStat {
     command: string;
@@ -16,10 +17,12 @@ export const AnalyticsPage: React.FC = () => {
     const [stats, setStats] = useState<any>({});
     const [loading, setLoading] = useState(true);
 
+
+
     useEffect(() => {
         Promise.all([
-            fetch('/api/commands').then(r => r.json()),
-            fetch('/api/stats').then(r => r.json()),
+            fetch(`${API_BASE}/api/commands`).then(r => r.json()),
+            fetch(`${API_BASE}/api/stats`).then(r => r.json()),
         ]).then(([cmds, sts]) => {
             setCommands(Array.isArray(cmds) ? cmds.slice(0, 10) : []);
             setStats(sts || {});

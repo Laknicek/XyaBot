@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { API_BASE } from '../config';
 
 interface MoodDay {
     day: string;
@@ -21,7 +22,7 @@ export const MoodHistoryPage: React.FC = () => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch('/api/mood-history')
+        fetch(`${API_BASE}/api/mood-history`)
             .then(r => r.json())
             .then(data => {
                 setHistory(data.history || []);
